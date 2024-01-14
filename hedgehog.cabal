@@ -31,10 +31,9 @@ cabal-version:
 build-type:
   Simple
 tested-with:
-    GHC == 8.6.5
-  , GHC == 8.8.3
-  , GHC == 8.10.1
-  , GHC == 9.2.1
+    GHC == 9.4.8
+  , GHC == 9.6.4
+  , GHC == 9.8.1
 extra-source-files:
   README.md
   CHANGELOG.md
