@@ -224,10 +224,6 @@ import qualified Hedgehog.Internal.Tree as Tree
 import           Hedgehog.Range (Size, Range)
 import qualified Hedgehog.Range as Range
 
-#if __GLASGOW_HASKELL__ < 808
-import qualified Control.Monad.Fail as Fail
-#endif
-
 ------------------------------------------------------------------------
 -- Generator transformer
 
@@ -403,11 +399,6 @@ instance Monad m => Monad (GenT m) where
         (sk, sm) ->
           runGenT size sk . k =<<
           runGenT size sm m
-
-#if __GLASGOW_HASKELL__ < 808
-  fail =
-    Fail.fail
-#endif
 
 instance Monad m => MonadFail (GenT m) where
   fail =

@@ -26,10 +26,6 @@ import qualified Data.Text as Text
 
 import           Hedgehog.Internal.Source (LineNo(..), ColumnNo(..))
 
-#if __GLASGOW_HASKELL__ < 808
-import           Data.Semigroup (Semigroup(..))
-#endif
-
 ------------------------------------------------------------------------
 -- Property Extraction
 
