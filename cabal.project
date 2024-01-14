@@ -1,5 +1,4 @@
-packages:
-  hedgehog
+packages: .
 
 if impl(ghc >= 9.8)
   package hedgehog
