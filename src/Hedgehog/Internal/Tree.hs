@@ -57,7 +57,6 @@ import           Control.Exception.Safe (Exception)
 import           Control.Monad (MonadPlus(..), guard, join)
 import           Control.Monad.Base (MonadBase(..))
 import           Control.Monad.Catch (MonadThrow(throwM), MonadCatch(catch))
-import           Control.Monad.Trans.Control ()
 import           Control.Monad.Error.Class (MonadError(..))
 import           Control.Monad.IO.Class (MonadIO(..))
 import           Control.Monad.Morph (MFunctor(..), MMonad(..), generalize)
@@ -78,7 +77,6 @@ import qualified Data.List as List
 import qualified Data.Maybe as Maybe
 
 import           Hedgehog.Internal.Distributive
-import           Control.Monad.Trans.Control (MonadBaseControl (..))
 
 import           Prelude hiding (filter)
 
@@ -105,11 +103,6 @@ newtype TreeT m a =
   TreeT {
       runTreeT :: m (NodeT m a)
     }
-
-instance MonadBaseControl b m => MonadBaseControl b (TreeT m) where
-  type StM (TreeT m) a = StM m (NodeT m a)
-  liftBaseWith f = TreeT $ liftBaseWith (\g -> pure <$> f (g . runTreeT))
-  restoreM = TreeT . restoreM
 
 -- | A node in a rose tree.
 --
