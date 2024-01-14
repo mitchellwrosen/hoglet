@@ -28,7 +28,6 @@ module Hedgehog.Internal.Gen (
   -- * Transformer
     Gen
   , GenT(..)
-  , MonadGen(..)
 
   -- * Combinators
   , generalize
@@ -190,15 +189,8 @@ import           Control.Monad.Primitive (PrimMonad(..))
 import           Control.Monad.Reader.Class (MonadReader(..))
 import           Control.Monad.State.Class (MonadState(..))
 import           Control.Monad.Trans.Class (MonadTrans(..))
-import           Control.Monad.Trans.Except (ExceptT(..))
-import           Control.Monad.Trans.Identity (IdentityT(..))
 import           Control.Monad.Trans.Maybe (MaybeT(..))
-import           Control.Monad.Trans.Reader (ReaderT(..))
 import           Control.Monad.Trans.Resource (MonadResource(..))
-import qualified Control.Monad.Trans.State.Lazy as Lazy
-import qualified Control.Monad.Trans.State.Strict as Strict
-import qualified Control.Monad.Trans.Writer.Lazy as Lazy
-import qualified Control.Monad.Trans.Writer.Strict as Strict
 import           Control.Monad.Writer.Class (MonadWriter(..))
 import           Control.Monad.Zip (MonadZip(..))
 
@@ -388,86 +380,6 @@ instance Monad m => MonadGen (GenT m) where
   --
   fromGenT =
     id
-
-instance MonadGen m => MonadGen (IdentityT m) where
-  type GenBase (IdentityT m) =
-    IdentityT (GenBase m)
-
-  toGenT =
-    distributeT . hoist toGenT
-
-  fromGenT =
-    hoist fromGenT . distributeT
-
-instance MonadGen m => MonadGen (MaybeT m) where
-  type GenBase (MaybeT m) =
-    MaybeT (GenBase m)
-
-  toGenT =
-    distributeT . hoist toGenT
-
-  fromGenT =
-    hoist fromGenT . distributeT
-
-instance MonadGen m => MonadGen (ExceptT x m) where
-  type GenBase (ExceptT x m) =
-    ExceptT x (GenBase m)
-
-  toGenT =
-    distributeT . hoist toGenT
-
-  fromGenT =
-    hoist fromGenT . distributeT
-
-instance MonadGen m => MonadGen (ReaderT r m) where
-  type GenBase (ReaderT r m) =
-    ReaderT r (GenBase m)
-
-  toGenT =
-    distributeT . hoist toGenT
-
-  fromGenT =
-    hoist fromGenT . distributeT
-
-instance MonadGen m => MonadGen (Lazy.StateT r m) where
-  type GenBase (Lazy.StateT r m) =
-    Lazy.StateT r (GenBase m)
-
-  toGenT =
-    distributeT . hoist toGenT
-
-  fromGenT =
-    hoist fromGenT . distributeT
-
-instance MonadGen m => MonadGen (Strict.StateT r m) where
-  type GenBase (Strict.StateT r m) =
-    Strict.StateT r (GenBase m)
-
-  toGenT =
-    distributeT . hoist toGenT
-
-  fromGenT =
-    hoist fromGenT . distributeT
-
-instance (MonadGen m, Monoid w) => MonadGen (Lazy.WriterT w m) where
-  type GenBase (Lazy.WriterT w m) =
-    Lazy.WriterT w (GenBase m)
-
-  toGenT =
-    distributeT . hoist toGenT
-
-  fromGenT =
-    hoist fromGenT . distributeT
-
-instance (MonadGen m, Monoid w) => MonadGen (Strict.WriterT w m) where
-  type GenBase (Strict.WriterT w m) =
-    Strict.WriterT w (GenBase m)
-
-  toGenT =
-    distributeT . hoist toGenT
-
-  fromGenT =
-    hoist fromGenT . distributeT
 
 ------------------------------------------------------------------------
 -- GenT instances
