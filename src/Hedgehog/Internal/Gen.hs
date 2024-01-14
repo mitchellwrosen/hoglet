@@ -153,8 +153,6 @@ module Hedgehog.Internal.Gen (
   , fromTree
   , fromTreeT
   , fromTreeMaybeT
-  , runDiscardEffect
-  , runDiscardEffectT
 
   -- ** Size
   , golden
@@ -176,7 +174,7 @@ module Hedgehog.Internal.Gen (
 import           Control.Applicative (liftA2)
 #endif
 import           Control.Applicative (Alternative(..))
-import           Control.Monad (MonadPlus(..), filterM, guard, replicateM, join)
+import           Control.Monad (MonadPlus(..), filterM, guard, replicateM)
 import           Control.Monad.Base (MonadBase(..))
 import           Control.Monad.Catch (MonadThrow(throwM), MonadCatch(catch))
 import           Control.Monad.Error.Class (MonadError(..))
@@ -214,7 +212,6 @@ import qualified Data.Text as Text
 import qualified Data.Text.Encoding as Text
 import           Data.Word (Word8, Word16, Word32, Word64)
 
-import           Hedgehog.Internal.Distributive (MonadTransDistributive(..))
 import           Hedgehog.Internal.Prelude hiding (either, maybe, seq)
 import           Hedgehog.Internal.Seed (Seed)
 import qualified Hedgehog.Internal.Seed as Seed
@@ -258,7 +255,7 @@ evalGen size seed =
 --
 evalGenT :: Monad m => Size -> Seed -> GenT m a -> TreeT m (Maybe a)
 evalGenT size seed =
-  runDiscardEffectT .
+  Tree.runTreeMaybeT .
   runGenT size seed
 
 -- | Map over a generator's shrink tree.
@@ -296,7 +293,7 @@ fromTreeMaybeT x =
 --
 toTree :: Gen a -> Gen (Tree a)
 toTree =
-  mapGenT (Maybe.maybe empty pure . runDiscardEffect)
+  mapGenT (Maybe.maybe empty pure . Tree.runTreeMaybe)
 
 -- | Lift a predefined shrink tree in to a generator, ignoring the seed and the
 --   size.
@@ -304,28 +301,6 @@ toTree =
 toTreeMaybeT :: Monad m => GenT m a -> GenT m (TreeT (MaybeT m) a)
 toTreeMaybeT =
   mapGenT pure
-
--- | Lazily run the discard effects through the tree and reify it a
---   @Maybe (Tree a)@.
---
---   'Nothing' means discarded, 'Just' means we have a value.
---
---   Discards in the child nodes of the tree are simply removed.
---
-runDiscardEffect :: TreeT (MaybeT Identity) a -> Maybe (Tree a)
-runDiscardEffect =
-  Tree.mapMaybe id .
-  runDiscardEffectT
-
--- | Run the discard effects through the tree and reify them as 'Maybe' values
---   at the nodes.
---
---   'Nothing' means discarded, 'Just' means we have a value.
---
-runDiscardEffectT :: Monad m => TreeT (MaybeT m) a -> TreeT m (Maybe a)
-runDiscardEffectT =
-  runMaybeT .
-  distributeT
 
 -- | Lift a @Gen / GenT Identity@ in to a @Monad m => GenT m@
 --
@@ -464,21 +439,6 @@ embedGenT f gen =
 instance MMonad GenT where
   embed =
     embedGenT
-
-distributeGenT :: Transformer t GenT m => GenT (t m) a -> t (GenT m) a
-distributeGenT x =
-  join . lift . GenT $ \size seed ->
-    pure . hoist fromTreeMaybeT . distributeT . hoist distributeT $ runGenT size seed x
-
-instance MonadTransDistributive GenT where
-  type Transformer t GenT m = (
-      Monad (t (GenT m))
-    , Transformer t MaybeT m
-    , Transformer t TreeT (MaybeT m)
-    )
-
-  distributeT =
-    distributeGenT
 
 instance PrimMonad m => PrimMonad (GenT m) where
   type PrimState (GenT m) =

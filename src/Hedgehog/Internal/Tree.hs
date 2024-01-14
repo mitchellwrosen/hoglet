@@ -34,6 +34,8 @@ module Hedgehog.Internal.Tree (
   , catMaybes
   , filter
   , mapMaybe
+  , runTreeMaybe
+  , runTreeMaybeT
   , filterMaybeT
   , mapMaybeMaybeT
   , filterT
@@ -246,6 +248,23 @@ mapMaybe p =
   mapMaybeMaybeT p .
   hoist lift
 
+-- | Lazily run the discard effects through the tree and reify it a
+--   @Maybe (Tree a)@.
+--
+--   'Nothing' means discarded, 'Just' means we have a value.
+--
+--   Discards in the child nodes of the tree are simply removed.
+--
+runTreeMaybe :: TreeT (MaybeT Identity) a -> Maybe (Tree a)
+runTreeMaybe =
+  mapMaybe id .
+  runTreeMaybeT
+
+-- | Run the discard effects through the tree and reify them as 'Maybe' values
+--   at the nodes.
+--
+--   'Nothing' means discarded, 'Just' means we have a value.
+--
 runTreeMaybeT :: Monad m => TreeT (MaybeT m) a -> TreeT m (Maybe a)
 runTreeMaybeT =
   runMaybeT .
