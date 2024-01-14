@@ -201,7 +201,6 @@ import qualified Data.Char as Char
 import           Data.Foldable (for_, toList)
 import           Data.Functor.Identity (Identity(..))
 import           Data.Int (Int8, Int16, Int32, Int64)
-import           Data.Kind (Type)
 import           Data.List.NonEmpty (NonEmpty)
 import qualified Data.List.NonEmpty as NonEmpty
 import           Data.Map (Map)
@@ -281,7 +280,7 @@ mapGenT f gen =
 -- | Lift a predefined shrink tree in to a generator, ignoring the seed and the
 --   size.
 --
-fromTree :: MonadGen m => Tree a -> m a
+fromTree :: Monad m => Tree a -> GenT m a
 fromTree =
   fromTreeT .
   hoist (Morph.generalize)
@@ -289,7 +288,7 @@ fromTree =
 -- | Lift a predefined shrink tree in to a generator, ignoring the seed and the
 --   size.
 --
-fromTreeT :: MonadGen m => TreeT (GenBase m) a -> m a
+fromTreeT :: Monad m => TreeT m a -> GenT m a
 fromTreeT x =
   fromTreeMaybeT $
     hoist (MaybeT . fmap Just) x
@@ -297,23 +296,23 @@ fromTreeT x =
 -- | Lift a predefined shrink tree in to a generator, ignoring the seed and the
 --   size.
 --
-fromTreeMaybeT :: MonadGen m => TreeT (MaybeT (GenBase m)) a -> m a
+fromTreeMaybeT :: TreeT (MaybeT m) a -> GenT m a
 fromTreeMaybeT x =
-  fromGenT . GenT $ \_ _ ->
+  GenT $ \_ _ ->
     x
 
 -- | Observe a generator's shrink tree.
 --
-toTree :: forall m a. (MonadGen m, GenBase m ~ Identity) => m a -> m (Tree a)
+toTree :: Gen a -> Gen (Tree a)
 toTree =
-  withGenT $ mapGenT (Maybe.maybe empty pure . runDiscardEffect)
+  mapGenT (Maybe.maybe empty pure . runDiscardEffect)
 
 -- | Lift a predefined shrink tree in to a generator, ignoring the seed and the
 --   size.
 --
-toTreeMaybeT :: MonadGen m => m a -> m (TreeT (MaybeT (GenBase m)) a)
+toTreeMaybeT :: Monad m => GenT m a -> GenT m (TreeT (MaybeT m) a)
 toTreeMaybeT =
-  withGenT $ mapGenT pure
+  mapGenT pure
 
 -- | Lazily run the discard effects through the tree and reify it a
 --   @Maybe (Tree a)@.
@@ -345,41 +344,6 @@ generalize =
 
 ------------------------------------------------------------------------
 -- MonadGen
-
--- | Class of monads which can generate input data for tests.
---
-class (Monad m, Monad (GenBase m)) => MonadGen m where
-  type GenBase m :: (Type -> Type)
-
-  -- | Extract a 'GenT' from a  'MonadGen'.
-  --
-  toGenT :: m a -> GenT (GenBase m) a
-
-  -- | Lift a 'GenT' in to a 'MonadGen'.
-  --
-  fromGenT :: GenT (GenBase m) a -> m a
-
--- | Transform a 'MonadGen' as a 'GenT'.
---
-withGenT :: (MonadGen m, MonadGen n) => (GenT (GenBase m) a -> GenT (GenBase n) b) -> m a -> n b
-withGenT f =
-  fromGenT . f . toGenT
-
-instance Monad m => MonadGen (GenT m) where
-  -- | The type of the transformer stack's base 'Monad'.
-  --
-  type GenBase (GenT m) =
-    m
-
-  -- | Convert a 'MonadGen' to a 'GenT'.
-  --
-  toGenT =
-    id
-
-  -- | Convert a 'GenT' to a 'MonadGen'.
-  --
-  fromGenT =
-    id
 
 ------------------------------------------------------------------------
 -- GenT instances
@@ -477,8 +441,9 @@ instance MonadTrans GenT where
     fromTreeMaybeT . lift . lift
 
 instance MFunctor GenT where
-  hoist f =
-    mapGenT (hoist (hoist f))
+  hoist f (GenT gen) =
+    GenT $ \size seed ->
+      hoist (hoist f) (gen size seed)
 
 embedMaybeT ::
      MonadTrans t
@@ -601,9 +566,9 @@ instance MonadResource m => MonadResource (GenT m) where
 
 -- | Generate a value with no shrinks from a 'Size' and a 'Seed'.
 --
-generate :: MonadGen m => (Size -> Seed -> a) -> m a
+generate :: Monad m => (Size -> Seed -> a) -> GenT m a
 generate f =
-  fromGenT . GenT $ \size seed ->
+  GenT $ \size seed ->
     pure (f size seed)
 
 ------------------------------------------------------------------------
@@ -614,37 +579,37 @@ generate f =
 --   This will give the generator additional shrinking options, while keeping
 --   the existing shrinks intact.
 --
-shrink :: MonadGen m => (a -> [a]) -> m a -> m a
+shrink :: Monad m => (a -> [a]) -> GenT m a -> GenT m a
 shrink f =
-  withGenT $ mapGenT (Tree.expand f)
+  mapGenT (Tree.expand f)
 
 -- | Throw away a generator's shrink tree.
 --
-prune :: MonadGen m => m a -> m a
+prune :: Monad m => GenT m a -> GenT m a
 prune =
-  withGenT $ mapGenT (Tree.prune 0)
+  mapGenT (Tree.prune 0)
 
 ------------------------------------------------------------------------
 -- Combinators - Size
 
 -- | Construct a generator that depends on the size parameter.
 --
-sized :: MonadGen m => (Size -> m a) -> m a
+sized :: Monad m => (Size -> GenT m a) -> GenT m a
 sized f = do
   f =<< generate (\size _ -> size)
 
 -- | Override the size parameter. Returns a generator which uses the given size
 --   instead of the runtime-size parameter.
 --
-resize :: MonadGen m => Size -> m a -> m a
+resize :: Size -> GenT m a -> GenT m a
 resize size gen =
   scale (const size) gen
 
 -- | Adjust the size parameter by transforming it with the given function.
 --
-scale :: MonadGen m => (Size -> Size) -> m a -> m a
+scale :: (Size -> Size) -> GenT m a -> GenT m a
 scale f =
-  withGenT $ \gen ->
+  \gen ->
     GenT $ \size0 seed ->
       let
         size =
@@ -657,7 +622,7 @@ scale f =
 
 -- | Make a generator smaller by scaling its size parameter.
 --
-small :: MonadGen m => m a -> m a
+small :: GenT m a -> GenT m a
 small =
   scale golden
 
@@ -706,7 +671,7 @@ golden x =
 --   > 2058
 --   > 2060
 --
-integral :: forall m a. (MonadGen m, Integral a) => Range a -> m a
+integral :: forall a m. (Monad m, Integral a) => Range a -> GenT m a
 integral range =
   -- https://github.com/hedgehogqa/haskell-hedgehog/pull/413/files
   let
@@ -732,14 +697,14 @@ integral range =
             binarySearchTree origin_ root
 
   in
-    fromGenT . GenT $ \size seed ->
+    GenT $ \size seed ->
       createTree $ integralHelper range size seed
 
 -- | Generates a random integral number in the [inclusive,inclusive] range.
 --
 --   /This generator does not shrink./
 --
-integral_ :: (MonadGen m, Integral a) => Range a -> m a
+integral_ :: Monad m => (Integral a) => Range a -> GenT m a
 integral_ =
   generate . integralHelper
 
@@ -759,7 +724,7 @@ integralHelper range size seed =
 --
 --   /This is a specialization of 'integral', offered for convenience./
 --
-int :: MonadGen m => Range Int -> m Int
+int :: Monad m => Range Int -> GenT m Int
 int =
   integral
 
@@ -767,7 +732,7 @@ int =
 --
 --   /This is a specialization of 'integral', offered for convenience./
 --
-int8 :: MonadGen m => Range Int8 -> m Int8
+int8 :: Monad m => Range Int8 -> GenT m Int8
 int8 =
   integral
 
@@ -775,7 +740,7 @@ int8 =
 --
 --   /This is a specialization of 'integral', offered for convenience./
 --
-int16 :: MonadGen m => Range Int16 -> m Int16
+int16 :: Monad m => Range Int16 -> GenT m Int16
 int16 =
   integral
 
@@ -783,7 +748,7 @@ int16 =
 --
 --   /This is a specialization of 'integral', offered for convenience./
 --
-int32 :: MonadGen m => Range Int32 -> m Int32
+int32 :: Monad m => Range Int32 -> GenT m Int32
 int32 =
   integral
 
@@ -791,7 +756,7 @@ int32 =
 --
 --   /This is a specialization of 'integral', offered for convenience./
 --
-int64 :: MonadGen m => Range Int64 -> m Int64
+int64 :: Monad m => Range Int64 -> GenT m Int64
 int64 =
   integral
 
@@ -799,7 +764,7 @@ int64 =
 --
 --   /This is a specialization of 'integral', offered for convenience./
 --
-word :: MonadGen m => Range Word -> m Word
+word :: Monad m => Range Word -> GenT m Word
 word =
   integral
 
@@ -807,7 +772,7 @@ word =
 --
 --   /This is a specialization of 'integral', offered for convenience./
 --
-word8 :: MonadGen m => Range Word8 -> m Word8
+word8 :: Monad m => Range Word8 -> GenT m Word8
 word8 =
   integral
 
@@ -815,7 +780,7 @@ word8 =
 --
 --   /This is a specialization of 'integral', offered for convenience./
 --
-word16 :: MonadGen m => Range Word16 -> m Word16
+word16 :: Monad m => Range Word16 -> GenT m Word16
 word16 =
   integral
 
@@ -823,7 +788,7 @@ word16 =
 --
 --   /This is a specialization of 'integral', offered for convenience./
 --
-word32 :: MonadGen m => Range Word32 -> m Word32
+word32 :: Monad m => Range Word32 -> GenT m Word32
 word32 =
   integral
 
@@ -831,7 +796,7 @@ word32 =
 --
 --   /This is a specialization of 'integral', offered for convenience./
 --
-word64 :: MonadGen m => Range Word64 -> m Word64
+word64 :: Monad m => Range Word64 -> GenT m Word64
 word64 =
   integral
 
@@ -842,7 +807,7 @@ word64 =
 --
 --   /This generator works the same as 'integral', but for floating point numbers./
 --
-realFloat :: (MonadGen m, RealFloat a) => Range a -> m a
+realFloat :: (Monad m, RealFloat a) => Range a -> GenT m a
 realFloat range =
   shrink (Shrink.towardsFloat $ Range.origin range) (realFrac_ range)
 
@@ -850,7 +815,7 @@ realFloat range =
 --
 --   /This generator does not shrink./
 --
-realFrac_ :: (MonadGen m, RealFrac a) => Range a -> m a
+realFrac_ :: (Monad m, RealFrac a) => Range a -> GenT m a
 realFrac_ range =
   generate $ \size seed ->
     let
@@ -864,7 +829,7 @@ realFrac_ range =
 --
 --   /This is a specialization of 'realFloat', offered for convenience./
 --
-float :: MonadGen m => Range Float -> m Float
+float :: Monad m => Range Float -> GenT m Float
 float =
  realFloat
 
@@ -872,7 +837,7 @@ float =
 --
 --   /This is a specialization of 'realFloat', offered for convenience./
 --
-double :: MonadGen m => Range Double -> m Double
+double :: Monad m => Range Double -> GenT m Double
 double =
  realFloat
 
@@ -889,7 +854,7 @@ double =
 -- enum \'a' \'z' :: 'Gen' 'Char'
 -- @
 --
-enum :: (MonadGen m, Enum a) => a -> a -> m a
+enum :: (Monad m, Enum a) => a -> a -> GenT m a
 enum lo hi =
   fmap toEnum . integral $
     Range.constant (fromEnum lo) (fromEnum hi)
@@ -906,7 +871,7 @@ enum lo hi =
 --
 --   /This is implemented in terms of the 'Enum' class, and thus may be/
 --   /partial for integral types larger than 'Int', e.g. 'Word64'./
-enumBounded :: (MonadGen m, Enum a, Bounded a) => m a
+enumBounded :: (Monad m, Enum a, Bounded a) => GenT m a
 enumBounded =
   enum minBound maxBound
 
@@ -916,7 +881,7 @@ enumBounded =
 --
 --   /This is a specialization of 'enumBounded', offered for convenience./
 --
-bool :: MonadGen m => m Bool
+bool :: Monad m => GenT m Bool
 bool =
   enumBounded
 
@@ -924,7 +889,7 @@ bool =
 --
 --   /This generator does not shrink./
 --
-bool_ :: MonadGen m => m Bool
+bool_ :: Monad m => GenT m Bool
 bool_ =
   generate $ \_ seed ->
     (/= 0) . fst $ Seed.nextInteger 0 1 seed
@@ -934,71 +899,71 @@ bool_ =
 
 -- | Generates an ASCII binit: @'0'..'1'@
 --
-binit :: MonadGen m => m Char
+binit :: Monad m => GenT m Char
 binit =
   enum '0' '1'
 
 -- | Generates an ASCII octit: @'0'..'7'@
 --
-octit :: MonadGen m => m Char
+octit :: Monad m => GenT m Char
 octit =
   enum '0' '7'
 
 -- | Generates an ASCII digit: @'0'..'9'@
 --
-digit :: MonadGen m => m Char
+digit :: Monad m => GenT m Char
 digit =
   enum '0' '9'
 
 -- | Generates an ASCII hexit: @'0'..'9', \'a\'..\'f\', \'A\'..\'F\'@
 --
-hexit :: MonadGen m => m Char
+hexit :: Monad m => GenT m Char
 hexit =
   -- FIXME optimize lookup, use a SmallArray or something.
   element "0123456789aAbBcCdDeEfF"
 
 -- | Generates an ASCII lowercase letter: @\'a\'..\'z\'@
 --
-lower :: MonadGen m => m Char
+lower :: Monad m => GenT m Char
 lower =
   enum 'a' 'z'
 
 -- | Generates an ASCII uppercase letter: @\'A\'..\'Z\'@
 --
-upper :: MonadGen m => m Char
+upper :: Monad m => GenT m Char
 upper =
   enum 'A' 'Z'
 
 -- | Generates an ASCII letter: @\'a\'..\'z\', \'A\'..\'Z\'@
 --
-alpha :: MonadGen m => m Char
+alpha :: Monad m => GenT m Char
 alpha =
   -- FIXME optimize lookup, use a SmallArray or something.
   element "abcdefghiklmnopqrstuvwxyzABCDEFGHIJKLMNOPQRSTUVWXYZ"
 
 -- | Generates an ASCII letter or digit: @\'a\'..\'z\', \'A\'..\'Z\', \'0\'..\'9\'@
 --
-alphaNum :: MonadGen m => m Char
+alphaNum :: Monad m => GenT m Char
 alphaNum =
   -- FIXME optimize lookup, use a SmallArray or something.
   element "abcdefghiklmnopqrstuvwxyzABCDEFGHIJKLMNOPQRSTUVWXYZ0123456789"
 
 -- | Generates an ASCII character: @'\0'..'\127'@
 --
-ascii :: MonadGen m => m Char
+ascii :: Monad m => GenT m Char
 ascii =
   enum '\0' '\127'
 
 -- | Generates a Latin-1 character: @'\0'..'\255'@
 --
-latin1 :: MonadGen m => m Char
+latin1 :: Monad m => GenT m Char
 latin1 =
   enum '\0' '\255'
 
 -- | Generates a Unicode character, excluding noncharacters and invalid standalone surrogates:
 --   @'\0'..'\1114111' (excluding '\55296'..'\57343', '\65534', '\65535')@
 --
-unicode :: (MonadGen m) => m Char
+unicode :: Monad m => GenT m Char
 unicode =
   let
     s1 =
@@ -1013,7 +978,7 @@ unicode =
 -- | Generates a Unicode character, including noncharacters and invalid standalone surrogates:
 --   @'\0'..'\1114111'@
 --
-unicodeAll :: MonadGen m => m Char
+unicodeAll :: Monad m => GenT m Char
 unicodeAll =
   enumBounded
 
@@ -1036,26 +1001,26 @@ isNoncharacter x =
 --
 --   /This is a specialization of 'list', offered for convenience./
 --
-string :: MonadGen m => Range Int -> m Char -> m String
+string :: Monad m => Range Int -> GenT m Char -> GenT m String
 string =
   list
 
 -- | Generates a string using 'Range' to determine the length.
 --
-text :: MonadGen m => Range Int -> m Char -> m Text
+text :: Monad m => Range Int -> GenT m Char -> GenT m Text
 text range =
   fmap Text.pack . string range
 
 -- | Generates a UTF-8 encoded string, using 'Range' to determine the length.
 --
-utf8 :: MonadGen m => Range Int -> m Char -> m ByteString
+utf8 :: Monad m => Range Int -> GenT m Char -> GenT m ByteString
 utf8 range =
   fmap Text.encodeUtf8 . text range
 
 -- | Generates a random 'ByteString', using 'Range' to determine the
 --   length.
 --
-bytes :: MonadGen m => Range Int -> m ByteString
+bytes :: Monad m => Range Int -> GenT m ByteString
 bytes range =
   fmap ByteString.pack $
   choice [
@@ -1074,7 +1039,7 @@ bytes range =
 -- | Trivial generator that always produces the same element.
 --
 --   /This is another name for 'pure' \/ 'return'./
-constant :: MonadGen m => a -> m a
+constant :: Monad m => a -> GenT m a
 constant =
   pure
 
@@ -1084,7 +1049,7 @@ constant =
 --
 --   /The input list must be non-empty./
 --
-element :: (Foldable f, MonadGen m) => f a -> m a
+element :: (Monad m, Foldable f) => f a -> GenT m a
 element fa = case toList fa of
   [] ->
     error "Hedgehog.Gen.element: used with empty Foldable"
@@ -1098,7 +1063,7 @@ element fa = case toList fa of
 --
 --   /The input list must be non-empty./
 --
-element_ :: MonadGen m => [a] -> m a
+element_ :: Monad m => [a] -> GenT m a
 element_ = \case
   [] ->
     error "Hedgehog.Gen.element: used with empty list"
@@ -1112,7 +1077,7 @@ element_ = \case
 --
 --   /The input list must be non-empty./
 --
-choice :: MonadGen m => [m a] -> m a
+choice :: Monad m => [GenT m a] -> GenT m a
 choice = \case
   [] ->
     error "Hedgehog.Gen.choice: used with empty list"
@@ -1127,7 +1092,7 @@ choice = \case
 --
 --   /The input list must be non-empty./
 --
-frequency :: MonadGen m => [(Int, m a)] -> m a
+frequency :: Monad m => [(Int, GenT m a)] -> GenT m a
 frequency = \case
   [] ->
     error "Hedgehog.Gen.frequency: used with empty list"
@@ -1188,7 +1153,7 @@ frequency = \case
 --   would fail to terminate. This is because for every call to @genExpr@,
 --   there is a 2 in 3 chance that we will recurse again.
 --
-recursive :: MonadGen m => ([m a] -> m a) -> [m a] -> [m a] -> m a
+recursive :: Monad m => ([GenT m a] -> GenT m a) -> [GenT m a] -> [GenT m a] -> GenT m a
 recursive f nonrec rec =
   sized $ \n ->
     if n <= 1 then
@@ -1201,14 +1166,14 @@ recursive f nonrec rec =
 
 -- | Discards the whole generator.
 --
-discard :: MonadGen m => m a
+discard :: Monad m => GenT m a
 discard =
-  fromGenT empty
+  empty
 
 -- | Discards the generator if the generated value does not satisfy the
 --   predicate.
 --
-ensure :: MonadGen m => (a -> Bool) -> m a -> m a
+ensure :: Monad m => (a -> Bool) -> GenT m a -> GenT m a
 ensure p gen = do
   x <- gen
   if p x then
@@ -1231,7 +1196,7 @@ fromPred p a = a <$ guard (p a)
 --   limit the number of retries, and grow the size with each retry. If we retry
 --   too many times then the whole generator is discarded.
 --
-filter :: (MonadGen m, GenBase m ~ Identity) => (a -> Bool) -> m a -> m a
+filter :: (a -> Bool) -> Gen a -> Gen a
 filter p =
   mapMaybe (fromPred p)
 
@@ -1248,7 +1213,7 @@ filter p =
 --   we limit the number of retries, and grow the size with each retry. If we
 --   retry too many times then the whole generator is discarded.
 --
-mapMaybe :: (MonadGen m, GenBase m ~ Identity) => (a -> Maybe b) -> m a -> m b
+mapMaybe :: (a -> Maybe b) -> Gen a -> GenT Identity b
 mapMaybe p gen0 =
   let
     try k =
@@ -1259,7 +1224,7 @@ mapMaybe p gen0 =
 
         case p x of
           Just _ ->
-            withGenT (mapGenT (Tree.mapMaybeMaybeT p)) gen
+            mapGenT (Tree.mapMaybeMaybeT p) gen
           Nothing ->
             try (k + 1)
   in
@@ -1288,7 +1253,7 @@ mapMaybe p gen0 =
 --   and grow the size with each retry. If we retry too many times then the
 --   whole generator is discarded.
 --
-filterT :: MonadGen m => (a -> Bool) -> m a -> m a
+filterT :: Monad m => (a -> Bool) -> GenT m a -> GenT m a
 filterT p =
   mapMaybeT (fromPred p)
 
@@ -1309,7 +1274,7 @@ filterT p =
 --   we limit the number of retries, and grow the size with each retry. If we
 --   retry too many times then the whole generator is discarded.
 --
-mapMaybeT :: MonadGen m => (a -> Maybe b) -> m a -> m b
+mapMaybeT :: Monad m => (a -> Maybe b) -> GenT m a -> GenT m b
 mapMaybeT p gen0 =
   let
     try k =
@@ -1320,7 +1285,7 @@ mapMaybeT p gen0 =
 
         case p x of
           Just _ ->
-            withGenT (mapGenT (Tree.mapMaybeT p)) gen
+            mapGenT (Tree.mapMaybeT p) gen
           Nothing ->
             try (k + 1)
   in
@@ -1330,7 +1295,7 @@ mapMaybeT p gen0 =
 --
 --   /This is implemented using 'filter' and has the same caveats./
 --
-just :: (MonadGen m, GenBase m ~ Identity) => m (Maybe a) -> m a
+just :: Gen (Maybe a) -> Gen a
 just g = do
   mx <- filter Maybe.isJust g
   case mx of
@@ -1343,7 +1308,7 @@ just g = do
 --
 --   /This is implemented using 'filter' and has the same caveats./
 --
-justT :: MonadGen m => m (Maybe a) -> m a
+justT :: Monad m => GenT m (Maybe a) -> GenT m a
 justT g = do
   mx <- filterT Maybe.isJust g
   case mx of
@@ -1357,7 +1322,7 @@ justT g = do
 
 -- | Generates a 'Nothing' some of the time.
 --
-maybe :: MonadGen m => m a -> m (Maybe a)
+maybe :: Monad m => GenT m a -> GenT m (Maybe a)
 maybe gen =
   sized $ \n ->
     frequency [
@@ -1369,7 +1334,7 @@ maybe gen =
 --
 --   As the size grows, this generator generates @Right@s more often than @Left@s.
 --
-either :: MonadGen m => m a -> m b -> m (Either a b)
+either :: Monad m => GenT m a -> GenT m b -> GenT m (Either a b)
 either genA genB =
   sized $ \n ->
     frequency [
@@ -1381,7 +1346,7 @@ either genA genB =
 --
 --   This generator generates as many @Right@s as it does @Left@s.
 --
-either_ :: MonadGen m => m a -> m b -> m (Either a b)
+either_ :: Monad m => GenT m a -> GenT m b -> GenT m (Either a b)
 either_ genA genB =
     choice [
       Left <$> genA
@@ -1390,7 +1355,7 @@ either_ genA genB =
 
 -- | Generates a list using a 'Range' to determine the length.
 --
-list :: MonadGen m => Range Int -> m a -> m [a]
+list :: Monad m => Range Int -> GenT m a -> GenT m [a]
 list range gen =
   let
      interleave =
@@ -1398,7 +1363,7 @@ list range gen =
   in
     sized $ \size ->
       ensure (atLeast $ Range.lowerBound size range) .
-      withGenT (mapGenT (TreeT . interleave . runTreeT)) $ do
+      mapGenT (TreeT . interleave . runTreeT) $ do
         n <- integral_ range
         replicateM n (toTreeMaybeT gen)
 
@@ -1408,13 +1373,13 @@ interleaveTreeT =
 
 -- | Generates a seq using a 'Range' to determine the length.
 --
-seq :: MonadGen m => Range Int -> m a -> m (Seq a)
+seq :: Monad m => Range Int -> GenT m a -> GenT m (Seq a)
 seq range gen =
   Seq.fromList <$> list range gen
 
 -- | Generates a non-empty list using a 'Range' to determine the length.
 --
-nonEmpty :: MonadGen m => Range Int -> m a -> m (NonEmpty a)
+nonEmpty :: Monad m => Range Int -> GenT m a -> GenT m (NonEmpty a)
 nonEmpty range gen = do
   xs <- list (fmap (max 1) range) gen
   case xs of
@@ -1429,7 +1394,7 @@ nonEmpty range gen = do
 --   /cannot produce a large enough number of unique items to satify/
 --   /the required set size./
 --
-set :: (MonadGen m, Ord a) => Range Int -> m a -> m (Set a)
+set :: (Monad m, Ord a) => Range Int -> GenT m a -> GenT m (Set a)
 set range gen =
   fmap Map.keysSet . map range $ fmap (, ()) gen
 
@@ -1439,7 +1404,7 @@ set range gen =
 --   /generator do not account for a large enough number of unique/
 --   /items to satify the required map size./
 --
-map :: (MonadGen m, Ord k) => Range Int -> m (k, v) -> m (Map k v)
+map :: (Monad m, Ord k) => Range Int -> GenT m (k, v) -> GenT m (Map k v)
 map range gen =
   sized $ \size ->
     ensure ((>= Range.lowerBound size range) . Map.size) .
@@ -1451,7 +1416,7 @@ map range gen =
 
 -- | Generate exactly 'n' unique generators.
 --
-uniqueByKey :: (MonadGen m, Ord k) => Int -> m (k, v) -> m [m (k, v)]
+uniqueByKey :: (Monad m, Ord k) => Int -> GenT m (k, v) -> GenT m [GenT m (k, v)]
 uniqueByKey n gen =
   let
     try k xs0 =
@@ -1515,16 +1480,16 @@ deriving instance Traversable (Vec n)
 --   This is used for implementing `list` and `subtermMVec`. It allows us to
 --   shrink the list itself before trying to shrink the values inside the list.
 --
-freeze :: MonadGen m => m a -> m (a, m a)
+freeze :: Monad m => GenT m a -> GenT m (a, GenT m a)
 freeze =
-  withGenT $ \gen ->
+  \gen ->
     GenT $ \size seed -> do
       mx <- lift . lift . runMaybeT . runTreeT $ runGenT size seed gen
       case mx of
         Nothing ->
           empty
         Just (NodeT x xs) ->
-          pure (x, fromGenT . fromTreeMaybeT . Tree.fromNodeT $ NodeT x xs)
+          pure (x, fromTreeMaybeT . Tree.fromNodeT $ NodeT x xs)
 
 shrinkSubterms :: Subterms n a -> [Subterms n a]
 shrinkSubterms = \case
@@ -1533,7 +1498,7 @@ shrinkSubterms = \case
   All xs ->
     fmap One $ toList xs
 
-genSubterms :: MonadGen m => Vec n (m a) -> m (Subterms n a)
+genSubterms :: Monad m => Vec n (GenT m a) -> GenT m (Subterms n a)
 genSubterms =
   (sequence =<<) .
   shrink shrinkSubterms .
@@ -1551,7 +1516,7 @@ fromSubterms f = \case
 --
 --   /Shrinks to one of the sub-terms if possible./
 --
-subtermMVec :: MonadGen m => Vec n (m a) -> (Vec n a -> m a) -> m a
+subtermMVec :: Monad m => Vec n (GenT m a) -> (Vec n a -> GenT m a) -> GenT m a
 subtermMVec gs f =
   fromSubterms f =<< genSubterms gs
 
@@ -1559,7 +1524,7 @@ subtermMVec gs f =
 --
 --   /Shrinks to the sub-term if possible./
 --
-subtermM :: MonadGen m => m a -> (a -> m a) -> m a
+subtermM :: Monad m => GenT m a -> (a -> GenT m a) -> GenT m a
 subtermM gx f =
   subtermMVec (gx :. Nil) $ \(x :. Nil) ->
     f x
@@ -1568,7 +1533,7 @@ subtermM gx f =
 --
 --   /Shrinks to the sub-term if possible./
 --
-subterm :: MonadGen m => m a -> (a -> a) -> m a
+subterm :: Monad m => GenT m a -> (a -> a) -> GenT m a
 subterm gx f =
   subtermM gx $ \x ->
     pure (f x)
@@ -1577,7 +1542,7 @@ subterm gx f =
 --
 --   /Shrinks to one of the sub-terms if possible./
 --
-subtermM2 :: MonadGen m => m a -> m a -> (a -> a -> m a) -> m a
+subtermM2 :: Monad m => GenT m a -> GenT m a -> (a -> a -> GenT m a) -> GenT m a
 subtermM2 gx gy f =
   subtermMVec (gx :. gy :. Nil) $ \(x :. y :. Nil) ->
     f x y
@@ -1586,7 +1551,7 @@ subtermM2 gx gy f =
 --
 --   /Shrinks to one of the sub-terms if possible./
 --
-subterm2 :: MonadGen m => m a -> m a -> (a -> a -> a) -> m a
+subterm2 :: Monad m => GenT m a -> GenT m a -> (a -> a -> a) -> GenT m a
 subterm2 gx gy f =
   subtermM2 gx gy $ \x y ->
     pure (f x y)
@@ -1595,7 +1560,7 @@ subterm2 gx gy f =
 --
 --   /Shrinks to one of the sub-terms if possible./
 --
-subtermM3 :: MonadGen m => m a -> m a -> m a -> (a -> a -> a -> m a) -> m a
+subtermM3 :: Monad m => GenT m a -> GenT m a -> GenT m a -> (a -> a -> a -> GenT m a) -> GenT m a
 subtermM3 gx gy gz f =
   subtermMVec (gx :. gy :. gz :. Nil) $ \(x :. y :. z :. Nil) ->
     f x y z
@@ -1604,7 +1569,7 @@ subtermM3 gx gy gz f =
 --
 --   /Shrinks to one of the sub-terms if possible./
 --
-subterm3 :: MonadGen m => m a -> m a -> m a -> (a -> a -> a -> a) -> m a
+subterm3 :: Monad m => GenT m a -> GenT m a -> GenT m a -> (a -> a -> a -> a) -> GenT m a
 subterm3 gx gy gz f =
   subtermM3 gx gy gz $ \x y z ->
     pure (f x y z)
@@ -1628,7 +1593,7 @@ subterm3 gx gy gz f =
 --   > [1,4]
 --   > [1,2]
 --
-subsequence :: MonadGen m => [a] -> m [a]
+subsequence :: Monad m => [a] -> GenT m [a]
 subsequence xs =
   shrink Shrink.list $ filterM (const bool_) xs
 
@@ -1636,7 +1601,7 @@ subsequence xs =
 --
 --  /This shrinks towards the empty set./
 --
-subset :: MonadGen m => Set a -> m (Set a)
+subset :: Monad m => Set a -> GenT m (Set a)
 -- Set.fromDistinctAscList has an unchecked precondition that the list
 -- must be strictly ascending. This precondition is satisfied because
 -- Set.toAscList produces a strictly ascending list, and the 'subsequence'
@@ -1650,7 +1615,7 @@ subset =
 --   /This shrinks towards the order of the list being identical to the input/
 --   /list./
 --
-shuffle :: MonadGen m => [a] -> m [a]
+shuffle :: Monad m => [a] -> GenT m [a]
 -- We shuffle sequences instead of lists to make extracting an arbitrary
 -- element logarithmic instead of linear, and to make length calculation
 -- constant-time instead of linear. We could probably do better, but
@@ -1662,7 +1627,7 @@ shuffle = fmap toList . shuffleSeq . Seq.fromList
 --   /This shrinks towards the order of the sequence being identical to the input/
 --   /sequence./
 --
-shuffleSeq :: MonadGen m => Seq a -> m (Seq a)
+shuffleSeq :: Monad m => Seq a -> GenT m (Seq a)
 shuffleSeq xs =
   if null xs then
     pure Seq.empty
