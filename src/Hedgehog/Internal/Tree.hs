@@ -10,13 +10,13 @@
 {-# LANGUAGE RankNTypes #-}
 {-# LANGUAGE ScopedTypeVariables #-}
 {-# LANGUAGE TypeFamilies #-}
-{-# LANGUAGE UndecidableInstances #-} -- MonadBase
 module Hedgehog.Internal.Tree (
     Tree
   , pattern Tree
   , TreeT(..)
   , runTree
   , mapTreeT
+  , zipTreeT
   , treeValue
   , treeChildren
 
@@ -54,19 +54,11 @@ import           Control.Applicative (liftA2)
 import           Control.Applicative (Alternative(..))
 import           Control.Exception.Safe (Exception)
 import           Control.Monad (MonadPlus(..), guard, join)
-import           Control.Monad.Base (MonadBase(..))
 import           Control.Monad.Catch (MonadThrow(throwM), MonadCatch(catch))
-import           Control.Monad.Error.Class (MonadError(..))
 import           Control.Monad.IO.Class (MonadIO(..))
-import           Control.Monad.Morph (MFunctor(..), MMonad(..), generalize)
-import           Control.Monad.Primitive (PrimMonad(..))
-import           Control.Monad.Reader.Class (MonadReader(..))
-import           Control.Monad.State.Class (MonadState(..))
+import           Control.Monad.Morph (MFunctor(..), generalize)
 import           Control.Monad.Trans.Class (MonadTrans(..))
 import           Control.Monad.Trans.Maybe (MaybeT(..))
-import           Control.Monad.Trans.Resource (MonadResource(..))
-import           Control.Monad.Writer.Class (MonadWriter(..))
-import           Control.Monad.Zip (MonadZip(..))
 
 import           Data.Functor.Identity (Identity(..))
 import           Data.Functor.Classes (Eq1(..))
@@ -489,10 +481,6 @@ zipTreeT l0@(TreeT left) r0@(TreeT right) =
     in
       zipNodeT <$> left <*> right
 
-instance Monad m => MonadZip (TreeT m) where
-  mzip =
-    zipTreeT
-
 instance MonadTrans TreeT where
   lift f =
     TreeT $
@@ -506,40 +494,18 @@ instance MFunctor TreeT where
   hoist f (TreeT m) =
     TreeT . f $ fmap (hoist f) m
 
-embedNodeT :: Monad m => (t (NodeT t b) -> TreeT m (NodeT t b)) -> NodeT t b -> NodeT m b
-embedNodeT f (NodeT x xs) =
-  NodeT x (fmap (embedTreeT f) xs)
-
-embedTreeT :: Monad m => (t (NodeT t b) -> TreeT m (NodeT t b)) -> TreeT t b -> TreeT m b
-embedTreeT f (TreeT m) =
-  TreeT . pure . embedNodeT f =<< f m
-
-instance MMonad TreeT where
-  embed f m =
-    embedTreeT f m
-
-distributeNodeT :: (Monad m, Applicative (t (TreeT m)), MonadTrans t, MFunctor t) => NodeT (t m) a -> t (TreeT m) a
+distributeNodeT :: (Monad m, MonadTrans t, MFunctor t) => NodeT (t m) a -> t (TreeT m) a
 distributeNodeT (NodeT x xs) =
   join . lift . fromNodeT . NodeT (pure x) $
     fmap (pure . distributeTreeT) xs
 
-distributeTreeT :: (Monad m, Monad (t (TreeT m)), MonadTrans t, MFunctor t) => TreeT (t m) a -> t (TreeT m) a
+distributeTreeT :: (Monad m, MonadTrans t, MFunctor t) => TreeT (t m) a -> t (TreeT m) a
 distributeTreeT x =
   distributeNodeT =<< hoist lift (runTreeT x)
-
-instance PrimMonad m => PrimMonad (TreeT m) where
-  type PrimState (TreeT m) =
-    PrimState m
-  primitive =
-    lift . primitive
 
 instance MonadIO m => MonadIO (TreeT m) where
   liftIO =
     lift . liftIO
-
-instance MonadBase b m => MonadBase b (TreeT m) where
-  liftBase =
-    lift . liftBase
 
 instance MonadThrow m => MonadThrow (TreeT m) where
   throwM =
@@ -558,82 +524,6 @@ handleTreeT onErr m =
 instance MonadCatch m => MonadCatch (TreeT m) where
   catch =
     flip handleTreeT
-
-localNodeT :: MonadReader r m => (r -> r) -> NodeT m a -> NodeT m a
-localNodeT f (NodeT x xs) =
-  NodeT x $
-    fmap (localTreeT f) xs
-
-localTreeT :: MonadReader r m => (r -> r) -> TreeT m a -> TreeT m a
-localTreeT f (TreeT m) =
-  TreeT $
-    pure . localNodeT f =<< local f m
-
-instance MonadReader r m => MonadReader r (TreeT m) where
-  ask =
-    lift ask
-  local =
-    localTreeT
-
-instance MonadState s m => MonadState s (TreeT m) where
-  get =
-    lift get
-  put =
-    lift . put
-  state =
-    lift . state
-
-listenNodeT :: MonadWriter w m => w -> NodeT m a -> NodeT m (a, w)
-listenNodeT w (NodeT x xs) =
-  NodeT (x, w) $
-    fmap (listenTreeT w) xs
-
-listenTreeT :: MonadWriter w m => w -> TreeT m a -> TreeT m (a, w)
-listenTreeT w0 (TreeT m) =
-  TreeT $ do
-    (x, w) <- listen m
-    pure $ listenNodeT (mappend w0 w) x
-
--- FIXME This just throws away the writer modification function.
-passNodeT :: MonadWriter w m => NodeT m (a, w -> w) -> NodeT m a
-passNodeT (NodeT (x, _) xs) =
-  NodeT x $
-    fmap passTreeT xs
-
-passTreeT :: MonadWriter w m => TreeT m (a, w -> w) -> TreeT m a
-passTreeT (TreeT m) =
-  TreeT $
-    pure . passNodeT =<< m
-
-instance MonadWriter w m => MonadWriter w (TreeT m) where
-  writer =
-    lift . writer
-  tell =
-    lift . tell
-  listen =
-    listenTreeT mempty
-  pass =
-    passTreeT
-
-handleErrorNodeT :: MonadError e m => (e -> TreeT m a) -> NodeT m a -> NodeT m a
-handleErrorNodeT onErr (NodeT x xs) =
-  NodeT x $
-    fmap (handleErrorTreeT onErr) xs
-
-handleErrorTreeT :: MonadError e m => (e -> TreeT m a) -> TreeT m a -> TreeT m a
-handleErrorTreeT onErr m =
-  TreeT . fmap (handleErrorNodeT onErr) $
-    catchError (runTreeT m) (runTreeT . onErr)
-
-instance MonadError e m => MonadError e (TreeT m) where
-  throwError =
-    lift . throwError
-  catchError =
-    flip handleErrorTreeT
-
-instance MonadResource m => MonadResource (TreeT m) where
-  liftResourceT =
-    lift . liftResourceT
 
 ------------------------------------------------------------------------
 -- Show/Show1 instances

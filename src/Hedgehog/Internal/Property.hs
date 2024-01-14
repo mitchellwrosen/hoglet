@@ -131,7 +131,6 @@ import           Control.DeepSeq (NFData, rnf)
 import           Control.Exception.Safe (MonadThrow, MonadCatch)
 import           Control.Exception.Safe (SomeException(..), displayException)
 import           Control.Monad ((<=<))
-import           Control.Monad.Base (MonadBase(..))
 import           Control.Monad.IO.Class (MonadIO(..))
 import           Control.Monad.Trans.Class (MonadTrans(..))
 import           Control.Monad.Trans.Except (ExceptT(..), runExceptT)
@@ -181,7 +180,6 @@ newtype Test a =
     , Applicative
     , Monad
     , MonadIO
-    , MonadBase IO
     , MonadThrow
     , MonadCatch
     )

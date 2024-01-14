@@ -19,7 +19,6 @@
 {-# LANGUAGE TupleSections #-}
 {-# LANGUAGE TypeFamilies #-}
 {-# LANGUAGE TypeOperators #-}
-{-# LANGUAGE UndecidableInstances #-} -- MonadBase
 {-# LANGUAGE DerivingVia #-}
 
 module Hedgehog.Internal.Gen (
@@ -175,20 +174,12 @@ import           Control.Applicative (liftA2)
 #endif
 import           Control.Applicative (Alternative(..))
 import           Control.Monad (MonadPlus(..), filterM, guard, replicateM)
-import           Control.Monad.Base (MonadBase(..))
 import           Control.Monad.Catch (MonadThrow(throwM), MonadCatch(catch))
-import           Control.Monad.Error.Class (MonadError(..))
 import           Control.Monad.IO.Class (MonadIO(..))
-import           Control.Monad.Morph (MFunctor(..), MMonad(..))
+import           Control.Monad.Morph (MFunctor(..))
 import qualified Control.Monad.Morph as Morph
-import           Control.Monad.Primitive (PrimMonad(..))
-import           Control.Monad.Reader.Class (MonadReader(..))
-import           Control.Monad.State.Class (MonadState(..))
 import           Control.Monad.Trans.Class (MonadTrans(..))
 import           Control.Monad.Trans.Maybe (MaybeT(..))
-import           Control.Monad.Trans.Resource (MonadResource(..))
-import           Control.Monad.Writer.Class (MonadWriter(..))
-import           Control.Monad.Zip (MonadZip(..))
 
 import           Data.Bifunctor (first)
 import           Data.ByteString (ByteString)
@@ -344,11 +335,11 @@ instance Monad m => Applicative (GenT m) where
     fromTreeMaybeT . pure
 
   (<*>) f m =
-    GenT $ \ size seed ->
+    GenT $ \size seed ->
       case Seed.split seed of
         (sf, sm) ->
           uncurry ($) <$>
-            runGenT size sf f `mzip`
+            runGenT size sf f `Tree.zipTreeT`
             runGenT size sm m
 
 --
@@ -406,54 +397,9 @@ instance MFunctor GenT where
     GenT $ \size seed ->
       hoist (hoist f) (gen size seed)
 
-embedMaybeT ::
-     MonadTrans t
-  => Monad n
-  => Monad (t (MaybeT n))
-  => (forall a. m a -> t (MaybeT n) a)
-  -> MaybeT m b
-  -> t (MaybeT n) b
-embedMaybeT f m =
-  lift . MaybeT . pure =<< f (runMaybeT m)
-
-embedTreeMaybeT ::
-     Monad n
-  => (forall a. m a -> TreeT (MaybeT n) a)
-  -> TreeT (MaybeT m) b
-  -> TreeT (MaybeT n) b
-embedTreeMaybeT f tree_ =
-  embed (embedMaybeT f) tree_
-
-embedGenT ::
-     Monad n
-  => (forall a. m a -> GenT n a)
-  -> GenT m b
-  -> GenT n b
-embedGenT f gen =
-  GenT $ \size seed ->
-    case Seed.split seed of
-      (sf, sg) ->
-        (runGenT size sf . f) `embedTreeMaybeT`
-        (runGenT size sg gen)
-
-instance MMonad GenT where
-  embed =
-    embedGenT
-
-instance PrimMonad m => PrimMonad (GenT m) where
-  type PrimState (GenT m) =
-    PrimState m
-
-  primitive =
-    lift . primitive
-
 instance MonadIO m => MonadIO (GenT m) where
   liftIO =
     lift . liftIO
-
-instance MonadBase b m => MonadBase b (GenT m) where
-  liftBase =
-    lift . liftBase
 
 instance MonadThrow m => MonadThrow (GenT m) where
   throwM =
@@ -466,46 +412,6 @@ instance MonadCatch m => MonadCatch (GenT m) where
         (sm, se) ->
           (runGenT size sm m) `catch`
           (runGenT size se . onErr)
-
-instance MonadReader r m => MonadReader r (GenT m) where
-  ask =
-    lift ask
-  local f m =
-    mapGenT (local f) m
-
-instance MonadState s m => MonadState s (GenT m) where
-  get =
-    lift get
-  put =
-    lift . put
-  state =
-    lift . state
-
-instance MonadWriter w m => MonadWriter w (GenT m) where
-  writer =
-    lift . writer
-  tell =
-    lift . tell
-  listen m =
-    GenT $ \size seed ->
-      listen $ runGenT size seed m
-  pass m =
-    GenT $ \size seed ->
-      pass $ runGenT size seed m
-
-instance MonadError e m => MonadError e (GenT m) where
-  throwError =
-    lift . throwError
-  catchError m onErr =
-    GenT $ \size seed ->
-      case Seed.split seed of
-        (sm, se) ->
-          (runGenT size sm m) `catchError`
-          (runGenT size se . onErr)
-
-instance MonadResource m => MonadResource (GenT m) where
-  liftResourceT =
-    lift . liftResourceT
 
 ------------------------------------------------------------------------
 -- Combinators
