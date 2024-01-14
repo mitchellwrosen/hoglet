@@ -56,8 +56,6 @@ import qualified Hedgehog.Internal.Seed as Seed
 import           Hedgehog.Internal.Tree (TreeT(..), NodeT(..))
 import           Hedgehog.Range (Size)
 
-import           Language.Haskell.TH.Syntax (Lift)
-
 #if mingw32_HOST_OS
 import           System.IO (hSetEncoding, stdout, stderr, utf8)
 #endif
@@ -80,7 +78,7 @@ data RunnerConfig =
       -- | How verbose to be in the runner output. 'Nothing' means detect from
       --   the environment.
     , runnerVerbosity :: !(Maybe Verbosity)
-    } deriving (Eq, Ord, Show, Lift)
+    } deriving (Eq, Ord, Show)
 
 findM :: Monad m => [a] -> b -> (a -> m (Maybe b)) -> m b
 findM xs0 def p =

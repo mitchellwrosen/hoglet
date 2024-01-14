@@ -59,8 +59,6 @@ module Hedgehog (
   , recheck
   , recheckAt
 
-  , discover
-  , discoverPrefix
   , checkParallel
   , checkSequential
 
@@ -163,5 +161,4 @@ import           Hedgehog.Internal.Property (collect, label)
 import           Hedgehog.Internal.Range (Range, Size(..))
 import           Hedgehog.Internal.Runner (check, recheck, recheckAt, checkSequential, checkParallel)
 import           Hedgehog.Internal.Seed (Seed(..))
-import           Hedgehog.Internal.TH (discover, discoverPrefix)
 import           Hedgehog.Internal.Tripping (tripping)

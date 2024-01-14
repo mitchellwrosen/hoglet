@@ -39,8 +39,6 @@ import           Hedgehog.Internal.Seed (Seed(..))
 import qualified Hedgehog.Internal.Seed as Seed
 import           Hedgehog.Internal.Property (Skip(..), skipDecompress)
 
-import           Language.Haskell.TH.Syntax (Lift)
-
 import           System.Console.ANSI (hSupportsANSI)
 import           System.Environment (lookupEnv)
 import           System.IO (stdout)
@@ -55,7 +53,7 @@ data UseColor =
     -- ^ Disable ANSI colors in report output.
   | EnableColor
     -- ^ Enable ANSI colors in report output.
-    deriving (Eq, Ord, Show, Lift)
+    deriving (Eq, Ord, Show)
 
 -- | How verbose should the report output be.
 --
@@ -64,13 +62,13 @@ data Verbosity =
     -- ^ Only display the summary of the test run.
   | Normal
     -- ^ Display each property as it is running, as well as the summary.
-    deriving (Eq, Ord, Show, Lift)
+    deriving (Eq, Ord, Show)
 
 -- | The number of workers to use when running properties in parallel.
 --
 newtype WorkerCount =
   WorkerCount Int
-  deriving (Eq, Ord, Show, Num, Enum, Real, Integral, Lift)
+  deriving (Eq, Ord, Show, Num, Enum, Real, Integral)
 
 detectMark :: MonadIO m => m Bool
 detectMark = do

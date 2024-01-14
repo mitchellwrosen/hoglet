@@ -156,8 +156,6 @@ import           Hedgehog.Internal.Prelude
 import           Hedgehog.Internal.Show
 import           Hedgehog.Internal.Source
 
-import           Language.Haskell.TH.Syntax (Lift)
-
 import qualified Numeric
 
 import           Text.Read (readMaybe)
@@ -195,7 +193,7 @@ newtype Test a =
 newtype Confidence =
   Confidence {
     unConfidence :: Int64
-  } deriving (Eq, Ord, Show, Num, Lift)
+  } deriving (Eq, Ord, Show, Num)
 
 -- | Configuration for a property test.
 --
@@ -209,7 +207,7 @@ data PropertyConfig =
     -- | If this is 'Nothing', we take the Skip from the environment variable
     --   @HEDGEHOG_SKIP@.
     , propertySkip :: Maybe Skip
-    } deriving (Eq, Ord, Show, Lift)
+    } deriving (Eq, Ord, Show)
 
 -- | The number of successful tests that need to be run before a property test
 --   is considered successful.
@@ -222,19 +220,19 @@ data PropertyConfig =
 --
 newtype TestLimit =
   TestLimit Int
-  deriving (Eq, Ord, Show, Num, Enum, Real, Integral, Lift)
+  deriving (Eq, Ord, Show, Num, Enum, Real, Integral)
 
 -- | The number of tests a property ran successfully.
 --
 newtype TestCount =
   TestCount Int
-  deriving (Eq, Ord, Show, Num, Enum, Real, Integral, Lift)
+  deriving (Eq, Ord, Show, Num, Enum, Real, Integral)
 
 -- | The number of tests a property had to discard.
 --
 newtype DiscardCount =
   DiscardCount Int
-  deriving (Eq, Ord, Show, Num, Enum, Real, Integral, Lift)
+  deriving (Eq, Ord, Show, Num, Enum, Real, Integral)
 
 -- | The number of discards to allow before giving up.
 --
@@ -247,7 +245,7 @@ newtype DiscardCount =
 --
 newtype DiscardLimit =
   DiscardLimit Int
-  deriving (Eq, Ord, Show, Num, Enum, Real, Integral, Lift)
+  deriving (Eq, Ord, Show, Num, Enum, Real, Integral)
 
 -- | The number of shrinks to try before giving up on shrinking.
 --
@@ -259,7 +257,7 @@ newtype DiscardLimit =
 --
 newtype ShrinkLimit =
   ShrinkLimit Int
-  deriving (Eq, Ord, Show, Num, Enum, Real, Integral, Lift)
+  deriving (Eq, Ord, Show, Num, Enum, Real, Integral)
 
 -- | The numbers of times a property was able to shrink after a failing test.
 --
@@ -291,7 +289,7 @@ data Skip =
   --   be tested too, and their results discarded.
   --
   | SkipToShrink TestCount DiscardCount ShrinkPath
-  deriving (Eq, Ord, Show, Lift)
+  deriving (Eq, Ord, Show)
 
 -- | We use this instance to support usage like
 --
@@ -313,7 +311,7 @@ instance IsString Skip where
 --
 newtype ShrinkPath =
   ShrinkPath [Int]
-  deriving (Eq, Ord, Show, Lift)
+  deriving (Eq, Ord, Show)
 
 -- | Compress a Skip into a hopefully-short alphanumeric string.
 --
@@ -462,7 +460,7 @@ shrinkPathDecompress str =
 --
 newtype ShrinkRetries =
   ShrinkRetries Int
-  deriving (Eq, Ord, Show, Num, Enum, Real, Integral, Lift)
+  deriving (Eq, Ord, Show, Num, Enum, Real, Integral)
 
 -- | A named collection of property tests.
 --
@@ -483,7 +481,7 @@ data Group =
 newtype GroupName =
   GroupName {
       unGroupName :: String
-    } deriving (Eq, Ord, Show, IsString, Semigroup, Lift)
+    } deriving (Eq, Ord, Show, IsString, Semigroup)
 
 -- | The number of properties in a group.
 --
@@ -495,7 +493,7 @@ data TerminationCriteria =
     EarlyTermination Confidence TestLimit
   | NoEarlyTermination Confidence TestLimit
   | NoConfidenceTermination TestLimit
-  deriving (Eq, Ord, Show, Lift)
+  deriving (Eq, Ord, Show)
 
 --
 -- FIXME This whole Log/Failure thing could be a lot more structured to allow
