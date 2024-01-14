@@ -128,23 +128,6 @@ module Hedgehog (
   , label
   , collect
 
-  -- * State Machine Tests
-  , Command(..)
-  , Callback(..)
-  , Action
-  , Sequential(..)
-  , Parallel(..)
-  , executeSequential
-  , executeParallel
-
-  , Var(..)
-  , concrete
-  , opaque
-
-  , Symbolic
-  , Concrete(..)
-  , Opaque(..)
-
   -- * Transformers
   , distributeT
 
@@ -173,7 +156,6 @@ import           Hedgehog.Internal.Barbie (FunctorB(..), TraversableB(..), Rec(.
 import           Hedgehog.Internal.Distributive (distributeT)
 import           Hedgehog.Internal.Gen (Gen, GenT, MonadGen(..))
 import           Hedgehog.Internal.HTraversable (HTraversable(..))
-import           Hedgehog.Internal.Opaque (Opaque(..))
 import           Hedgehog.Internal.Property (annotate, annotateShow)
 import           Hedgehog.Internal.Property (assert, diff, (===), (/==))
 import           Hedgehog.Internal.Property (classify, cover)
@@ -196,10 +178,6 @@ import           Hedgehog.Internal.Property (collect, label)
 import           Hedgehog.Internal.Range (Range, Size(..))
 import           Hedgehog.Internal.Runner (check, recheck, recheckAt, checkSequential, checkParallel)
 import           Hedgehog.Internal.Seed (Seed(..))
-import           Hedgehog.Internal.State (Command(..), Callback(..))
-import           Hedgehog.Internal.State (Action, Sequential(..), Parallel(..))
-import           Hedgehog.Internal.State (executeSequential, executeParallel)
-import           Hedgehog.Internal.State (Var(..), Symbolic, Concrete(..), concrete, opaque)
 import           Hedgehog.Internal.TH (discover, discoverPrefix)
 import           Hedgehog.Internal.Tripping (tripping)
 
