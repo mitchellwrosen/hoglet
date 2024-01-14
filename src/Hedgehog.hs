@@ -120,9 +120,6 @@ module Hedgehog (
   , label
   , collect
 
-  -- * Transformers
-  , distributeT
-
   -- * Functors
   , Eq1
   , eq1
@@ -136,7 +133,6 @@ module Hedgehog (
 
 import           Data.Functor.Classes (Eq1, eq1, Ord1, compare1, Show1, showsPrec1)
 
-import           Hedgehog.Internal.Distributive (distributeT)
 import           Hedgehog.Internal.Gen (Gen, GenT)
 import           Hedgehog.Internal.Property (annotate, annotateShow)
 import           Hedgehog.Internal.Property (assert, diff, (===), (/==))

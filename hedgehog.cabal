@@ -87,7 +87,6 @@ library
   other-modules:
     Hedgehog.Internal.Config
     Hedgehog.Internal.Discovery
-    Hedgehog.Internal.Distributive
     Hedgehog.Internal.Exception
     Hedgehog.Internal.Gen
     Hedgehog.Internal.Prelude

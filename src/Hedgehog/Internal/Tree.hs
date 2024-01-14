@@ -75,8 +75,6 @@ import           Data.Functor.Classes (showsUnaryWith, showsBinaryWith)
 import qualified Data.List as List
 import qualified Data.Maybe as Maybe
 
-import           Hedgehog.Internal.Distributive
-
 import           Prelude hiding (filter)
 
 ------------------------------------------------------------------------
@@ -268,7 +266,7 @@ runTreeMaybe =
 runTreeMaybeT :: Monad m => TreeT (MaybeT m) a -> TreeT m (Maybe a)
 runTreeMaybeT =
   runMaybeT .
-  distributeT
+  distributeTreeT
 
 -- | Returns a tree containing only elements that match the predicate.
 --
@@ -520,18 +518,14 @@ instance MMonad TreeT where
   embed f m =
     embedTreeT f m
 
-distributeNodeT :: Transformer t TreeT m => NodeT (t m) a -> t (TreeT m) a
+distributeNodeT :: (Monad m, Applicative (t (TreeT m)), MonadTrans t, MFunctor t) => NodeT (t m) a -> t (TreeT m) a
 distributeNodeT (NodeT x xs) =
   join . lift . fromNodeT . NodeT (pure x) $
     fmap (pure . distributeTreeT) xs
 
-distributeTreeT :: Transformer t TreeT m => TreeT (t m) a -> t (TreeT m) a
+distributeTreeT :: (Monad m, Monad (t (TreeT m)), MonadTrans t, MFunctor t) => TreeT (t m) a -> t (TreeT m) a
 distributeTreeT x =
   distributeNodeT =<< hoist lift (runTreeT x)
-
-instance MonadTransDistributive TreeT where
-  distributeT =
-    distributeTreeT
 
 instance PrimMonad m => PrimMonad (TreeT m) where
   type PrimState (TreeT m) =
