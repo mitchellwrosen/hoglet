@@ -20,9 +20,7 @@
 {-# LANGUAGE TypeFamilies #-}
 {-# LANGUAGE TypeOperators #-}
 {-# LANGUAGE UndecidableInstances #-} -- MonadBase
-#if __GLASGOW_HASKELL__ >= 806
 {-# LANGUAGE DerivingVia #-}
-#endif
 
 module Hedgehog.Internal.Gen (
   -- * Transformer
@@ -228,9 +226,6 @@ import qualified Hedgehog.Range as Range
 
 #if __GLASGOW_HASKELL__ < 808
 import qualified Control.Monad.Fail as Fail
-#endif
-#if __GLASGOW_HASKELL__ < 806
-import           Data.Coerce (coerce)
 #endif
 
 ------------------------------------------------------------------------
