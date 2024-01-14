@@ -31,9 +31,7 @@ cabal-version:
 build-type:
   Simple
 tested-with:
-    GHC == 8.0.2
-  , GHC == 8.2.2
-  , GHC == 8.4.4
+    GHC == 8.4.4
   , GHC == 8.6.5
   , GHC == 8.8.3
   , GHC == 8.10.1
@@ -49,7 +47,7 @@ source-repository head
 library
   build-depends:
    -- GHC 8.0.1 / base-4.9.0.0 (May 2016)
-      base                            >= 4.9        && < 5
+      base                            >= 4.11       && < 5
     , ansi-terminal                   >= 0.6        && < 1.1
     , async                           >= 2.0        && < 2.3
     , bytestring                      >= 0.10       && < 0.13

@@ -11,9 +11,6 @@
 {-# LANGUAGE ScopedTypeVariables #-}
 {-# LANGUAGE TypeFamilies #-}
 {-# LANGUAGE UndecidableInstances #-} -- MonadBase
-#if __GLASGOW_HASKELL__ < 802
-{-# OPTIONS_GHC -fno-warn-incomplete-patterns #-}
-#endif
 module Hedgehog.Internal.Tree (
     Tree
   , pattern Tree
@@ -92,9 +89,7 @@ type Tree =
 pattern Tree :: NodeT Identity a -> Tree a
 pattern Tree node =
   TreeT (Identity node)
-#if __GLASGOW_HASKELL__ >= 802
 {-# COMPLETE Tree #-}
-#endif
 
 -- | An effectful tree, each node in the tree can have an effect before it is
 --   produced.
@@ -108,9 +103,7 @@ newtype TreeT m a =
 --
 type Node =
   NodeT Identity
-#if __GLASGOW_HASKELL__ >= 802
 {-# COMPLETE Node #-}
-#endif
 
 -- | Pattern to ease construction / deconstruction of pure nodes.
 --
