@@ -25,7 +25,6 @@
 module Hedgehog.Internal.Property (
   -- * Property
     Property(..)
-  , PropertyT(..)
   , PropertyName(..)
   , PropertyConfig(..)
   , TestLimit(..)
@@ -134,14 +133,12 @@ module Hedgehog.Internal.Property (
   , wilsonBounds
   ) where
 
-import           Control.Applicative (Alternative(..))
 import           Control.DeepSeq (NFData, rnf)
 import           Control.Exception.Safe (MonadThrow, MonadCatch)
 import           Control.Exception.Safe (SomeException(..), displayException)
-import           Control.Monad (MonadPlus(..), (<=<))
+import           Control.Monad ((<=<))
 import           Control.Monad.Base (MonadBase(..))
 import           Control.Monad.Error.Class (MonadError(..))
-import qualified Control.Monad.Fail as Fail
 import           Control.Monad.IO.Class (MonadIO(..))
 import           Control.Monad.Morph (MFunctor(..))
 import           Control.Monad.Primitive (PrimMonad(..))
@@ -198,39 +195,8 @@ import           Text.Read (readMaybe)
 data Property =
   Property {
       propertyConfig :: !PropertyConfig
-    , propertyTest :: PropertyT IO ()
+    , propertyTest :: TestT (GenT IO) ()
     }
-
--- | The property monad transformer allows both the generation of test inputs
---   and the assertion of expectations.
---
-newtype PropertyT m a =
-  PropertyT {
-      unPropertyT :: TestT (GenT m) a
-    } deriving (
-      Functor
-    , Applicative
-    , Monad
-    , MonadIO
-    , MonadBase b
-    , MonadThrow
-    , MonadCatch
-    , MonadReader r
-    , MonadState s
-    , MonadError e
-    )
--- NOTE: Move this to the deriving list above when we drop 7.10
-deriving instance MonadResource m => MonadResource (PropertyT m)
-
--- NOTE: Move this to the deriving list above when we drop 8.0
-#if __GLASGOW_HASKELL__ >= 802
-deriving instance MonadBaseControl b m => MonadBaseControl b (PropertyT m)
-#else
-instance MonadBaseControl b m => MonadBaseControl b (PropertyT m) where
-  type StM (PropertyT m) a = StM (TestT (GenT m)) a
-  liftBaseWith f = PropertyT $ liftBaseWith $ \rib -> f (rib . unPropertyT)
-  restoreM = PropertyT . restoreM
-#endif
 
 -- | A test monad allows the assertion of expectations.
 --
@@ -1060,65 +1026,15 @@ evalMaybeM =
 ------------------------------------------------------------------------
 -- PropertyT
 
-instance MonadTrans PropertyT where
-  lift =
-    PropertyT . lift . lift
-
-instance Monad m => MonadFail (PropertyT m) where
-  fail err =
-    PropertyT (Fail.fail err)
-
-instance MFunctor PropertyT where
-  hoist f =
-    PropertyT . hoist (hoist f) . unPropertyT
-
-instance MonadTransDistributive PropertyT where
-  type Transformer t PropertyT m = (
-      Transformer t GenT m
-    , Transformer t TestT (GenT m)
-    )
-
-  distributeT =
-    hoist PropertyT .
-    distributeT .
-    hoist distributeT .
-    unPropertyT
-
-instance PrimMonad m => PrimMonad (PropertyT m) where
-  type PrimState (PropertyT m) =
-    PrimState m
-  primitive =
-    lift . primitive
-
----- FIXME instance MonadWriter w m => MonadWriter w (PropertyT m)
-
-instance Monad m => MonadTest (PropertyT m) where
-  liftTest =
-    PropertyT . hoist (pure . runIdentity)
-
-instance MonadPlus m => MonadPlus (PropertyT m) where
-  mzero =
-    discard
-
-  mplus (PropertyT x) (PropertyT y) =
-    PropertyT . mkTestT $
-      mplus (runTestT x) (runTestT y)
-
-instance MonadPlus m => Alternative (PropertyT m) where
-  empty =
-    mzero
-  (<|>) =
-    mplus
-
 -- | Generates a random input for the test by running the provided generator.
 --
 --   /This is a the same as 'forAllT' but allows the user to provide a custom/
 --   /rendering function. This is useful for values which don't have a/
 --   /'Show' instance./
 --
-forAllWithT :: (Monad m, HasCallStack) => (a -> String) -> GenT m a -> PropertyT m a
+forAllWithT :: (Monad m, HasCallStack) => (a -> String) -> GenT m a -> TestT (GenT m) a
 forAllWithT render gen = do
-  x <- PropertyT $ lift gen
+  x <- lift gen
   withFrozenCallStack $ annotate (render x)
   return x
 
@@ -1128,28 +1044,28 @@ forAllWithT render gen = do
 --   /rendering function. This is useful for values which don't have a/
 --   /'Show' instance./
 --
-forAllWith :: (Monad m, HasCallStack) => (a -> String) -> Gen a -> PropertyT m a
+forAllWith :: (Monad m, HasCallStack) => (a -> String) -> Gen a -> TestT (GenT m) a
 forAllWith render gen =
   withFrozenCallStack $ forAllWithT render $ Gen.generalize gen
 
 -- | Generates a random input for the test by running the provided generator.
 --
 --
-forAllT :: (Monad m, Show a, HasCallStack) => GenT m a -> PropertyT m a
+forAllT :: (Monad m, Show a, HasCallStack) => GenT m a -> TestT (GenT m) a
 forAllT gen =
   withFrozenCallStack $ forAllWithT showPretty gen
 
 -- | Generates a random input for the test by running the provided generator.
 --
-forAll :: (Monad m, Show a, HasCallStack) => Gen a -> PropertyT m a
+forAll :: (Monad m, Show a, HasCallStack) => Gen a -> TestT (GenT m) a
 forAll gen =
   withFrozenCallStack $ forAllWith showPretty gen
 
 -- | Discards the current test entirely.
 --
-discard :: Monad m => PropertyT m a
+discard :: Monad m => TestT (GenT m) a
 discard =
-  PropertyT $ lift (Gen.generalize Gen.discard)
+  lift (Gen.generalize Gen.discard)
 
 -- | Lift a test in to a property.
 --
@@ -1163,9 +1079,9 @@ discard =
 --   'Hedgehog.Internal.State.executeParallel' requires 'MonadBaseControl' 'IO'
 --   in order to be able to spawn threads in 'MonadTest'.
 --
-test :: Monad m => TestT m a -> PropertyT m a
+test :: Monad m => TestT m a -> TestT (GenT m) a
 test =
-  PropertyT . hoist lift
+  hoist lift
 
 ------------------------------------------------------------------------
 -- Property
@@ -1279,7 +1195,7 @@ withSkip s =
 
 -- | Creates a property with the default configuration.
 --
-property :: HasCallStack => PropertyT IO () -> Property
+property :: HasCallStack => TestT (GenT IO) () -> Property
 property m =
   Property defaultConfig $
     withFrozenCallStack (evalM m)

@@ -34,13 +34,13 @@ import           Control.Monad.IO.Class (MonadIO(..))
 import           Data.Maybe (isJust)
 
 import           Hedgehog.Internal.Config
-import           Hedgehog.Internal.Gen (evalGenT)
+import           Hedgehog.Internal.Gen (GenT, evalGenT)
 import           Hedgehog.Internal.Prelude
 import           Hedgehog.Internal.Property (DiscardCount(..), ShrinkCount(..))
 import           Hedgehog.Internal.Property (Group(..), GroupName(..))
 import           Hedgehog.Internal.Property (Journal(..), Coverage(..), CoverCount(..))
 import           Hedgehog.Internal.Property (Property(..), PropertyConfig(..), PropertyName(..))
-import           Hedgehog.Internal.Property (PropertyT(..), Failure(..), runTestT)
+import           Hedgehog.Internal.Property (TestT, Failure(..), runTestT)
 import           Hedgehog.Internal.Property (ShrinkLimit, ShrinkRetries, withTests, withSkip)
 import           Hedgehog.Internal.Property (TerminationCriteria(..))
 import           Hedgehog.Internal.Property (TestCount(..), PropertyCount(..))
@@ -209,7 +209,7 @@ checkReport ::
   => PropertyConfig
   -> Size
   -> Seed
-  -> PropertyT m ()
+  -> TestT (GenT m) ()
   -> (Report Progress -> m ())
   -> m (Report Result)
 checkReport cfg size0 seed0 test0 updateUI = do
@@ -342,14 +342,14 @@ checkReport cfg size0 seed0 test0 updateUI = do
                 loop tests (discards + 1) (size + 1) s1 coverage0
             (Just _, Just shrinkPath) -> do
               node <-
-                runTreeT . evalGenT size s0 . runTestT $ unPropertyT test
+                runTreeT . evalGenT size s0 . runTestT $ test
               let
                 mkReport =
                   Report (tests + 1) discards coverage0 seed0
               mkReport <$> skipToShrink shrinkPath (updateUI . mkReport) node
             _ -> do
               node@(NodeT x _) <-
-                runTreeT . evalGenT size s0 . runTestT $ unPropertyT test
+                runTreeT . evalGenT size s0 . runTestT $ test
               case x of
                 Nothing ->
                   loop tests (discards + 1) (size + 1) s1 coverage0
