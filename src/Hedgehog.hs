@@ -132,11 +132,6 @@ module Hedgehog (
   , distributeT
 
   -- * Functors
-  -- $functors
-  , FunctorB(..)
-  , TraversableB(..)
-  , Rec(..)
-
   , Eq1
   , eq1
 
@@ -145,17 +140,12 @@ module Hedgehog (
 
   , Show1
   , showsPrec1
-
-  -- * Deprecated
-  , HTraversable(..)
   ) where
 
 import           Data.Functor.Classes (Eq1, eq1, Ord1, compare1, Show1, showsPrec1)
 
-import           Hedgehog.Internal.Barbie (FunctorB(..), TraversableB(..), Rec(..))
 import           Hedgehog.Internal.Distributive (distributeT)
 import           Hedgehog.Internal.Gen (Gen, GenT, MonadGen(..))
-import           Hedgehog.Internal.HTraversable (HTraversable(..))
 import           Hedgehog.Internal.Property (annotate, annotateShow)
 import           Hedgehog.Internal.Property (assert, diff, (===), (/==))
 import           Hedgehog.Internal.Property (classify, cover)
@@ -180,40 +170,3 @@ import           Hedgehog.Internal.Runner (check, recheck, recheckAt, checkSeque
 import           Hedgehog.Internal.Seed (Seed(..))
 import           Hedgehog.Internal.TH (discover, discoverPrefix)
 import           Hedgehog.Internal.Tripping (tripping)
-
-
--- $functors
---
--- 'FunctorB' and 'TraversableB' must be implemented for all 'Command' @input@ types.
---
--- This is most easily achieved using `DeriveGeneric`:
---
--- @
--- data Register v =
---   Register Name (Var Pid v)
---   deriving (Eq, Show, Generic)
---
--- instance FunctorB Register
--- instance TraversableB Register
---
--- newtype Unregister (v :: * -> *) =
---   Unregister Name
---   deriving (Eq, Show, Generic)
---
--- instance FunctorB Unregister
--- instance TraversableB Unregister
--- @
---
--- `DeriveAnyClass` and `DerivingStrategies` allow a more compact syntax:
---
--- @
--- data Register v =
---   Register Name (Var Pid v)
---   deriving (Eq, Show, Generic, FunctorB, TraversableB)
---
--- newtype Unregister (v :: * -> *) =
---   Unregister Name
---   deriving (Eq, Show, Generic)
---   deriving anyclass (FunctorB, TraversableB)
--- @
---
