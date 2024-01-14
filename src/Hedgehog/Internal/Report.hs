@@ -49,6 +49,8 @@ import           Data.Maybe (mapMaybe, catMaybes)
 #if !MIN_VERSION_base(4,11,0)
 import qualified Data.Semigroup as Semigroup
 #endif
+import           Data.Text (Text)
+import qualified Data.Text as Text
 import           Data.Traversable (for)
 
 import           Hedgehog.Internal.Config
@@ -57,7 +59,7 @@ import qualified Hedgehog.Internal.Discovery as Discovery
 import           Hedgehog.Internal.Prelude
 import           Hedgehog.Internal.Property (CoverCount(..), CoverPercentage(..))
 import           Hedgehog.Internal.Property (Coverage(..), Label(..), LabelName(..))
-import           Hedgehog.Internal.Property (PropertyName(..), Log(..), Diff(..))
+import           Hedgehog.Internal.Property (Log(..), Diff(..))
 import           Hedgehog.Internal.Property (ShrinkCount(..), PropertyCount(..))
 import           Hedgehog.Internal.Property (TestCount(..), DiscardCount(..))
 import           Hedgehog.Internal.Property (coverPercentage, coverageFailures)
@@ -591,7 +593,7 @@ ppDeclaration decl =
       in
         WL.vsep (ppLocation : ppLines)
 
-ppReproduce :: Maybe PropertyName -> Seed -> Skip -> Doc Markup
+ppReproduce :: Maybe Text -> Seed -> Skip -> Doc Markup
 ppReproduce name seed skip =
   WL.vsep [
       markup ReproduceHeader
@@ -600,7 +602,7 @@ ppReproduce name seed skip =
         "recheckAt" <+>
         WL.text (showsPrec 11 seed "") <+>
         ppSkipReadable skip <+>
-        maybe "<property>" (WL.text . unPropertyName) name
+        maybe "<property>" (WL.text . Text.unpack) name
     ]
 
 mergeLine :: Semigroup a => Line a -> Line a -> Line a
@@ -622,7 +624,7 @@ ppTextLines :: String -> [Doc Markup]
 ppTextLines =
   fmap WL.text . List.lines
 
-ppFailureReport :: MonadIO m => Maybe PropertyName -> TestCount -> DiscardCount -> Seed -> FailureReport -> m [Doc Markup]
+ppFailureReport :: MonadIO m => Maybe Text -> TestCount -> DiscardCount -> Seed -> FailureReport -> m [Doc Markup]
 ppFailureReport name tests discards seed (FailureReport _ shrinkPath mcoverage inputs0 mlocation0 msg mdiff msgs0) = do
   let
     basic =
@@ -718,14 +720,14 @@ ppFailureReport name tests discards seed (FailureReport _ shrinkPath mcoverage i
         id
     ]
 
-ppName :: Maybe PropertyName -> Doc a
+ppName :: Maybe Text -> Doc a
 ppName = \case
   Nothing ->
     "<interactive>"
-  Just (PropertyName name) ->
-    WL.text name
+  Just name ->
+    WL.text (Text.unpack name)
 
-ppProgress :: MonadIO m => Maybe PropertyName -> Report Progress -> m (Doc Markup)
+ppProgress :: MonadIO m => Maybe Text -> Report Progress -> m (Doc Markup)
 ppProgress name (Report tests discards coverage _ status) =
   case status of
     Running ->
@@ -748,7 +750,7 @@ ppProgress name (Report tests discards coverage _ status) =
         ppShrinkDiscard (failureShrinks failure) discards <+>
         "(shrinking)"
 
-ppResult :: MonadIO m => Maybe PropertyName -> Report Result -> m (Doc Markup)
+ppResult :: MonadIO m => Maybe Text -> Report Result -> m (Doc Markup)
 ppResult name (Report tests discards coverage seed result) = do
   case result of
     Failed failure -> do
@@ -1219,11 +1221,11 @@ renderDoc color doc = do
     WL.renderSmart 100 $
     WL.indent 2 doc
 
-renderProgress :: MonadIO m => UseColor -> Maybe PropertyName -> Report Progress -> m String
+renderProgress :: MonadIO m => UseColor -> Maybe Text -> Report Progress -> m String
 renderProgress color name x =
   renderDoc color =<< ppProgress name x
 
-renderResult :: MonadIO m => UseColor -> Maybe PropertyName -> Report Result -> m String
+renderResult :: MonadIO m => UseColor -> Maybe Text -> Report Result -> m String
 renderResult color name x =
   renderDoc color =<< ppResult name x
 

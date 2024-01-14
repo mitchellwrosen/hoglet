@@ -25,7 +25,6 @@
 module Hedgehog.Internal.Property (
   -- * Property
     Property(..)
-  , PropertyName(..)
   , PropertyConfig(..)
   , TestLimit(..)
   , TestCount(..)
@@ -147,6 +146,7 @@ import           Data.Number.Erf (invnormcdf)
 import qualified Data.List as List
 import           Data.String (IsString(..))
 import           Data.Ratio ((%))
+import           Data.Text (Text)
 import           Data.Typeable (typeOf)
 
 import           Hedgehog.Internal.Exception
@@ -187,19 +187,6 @@ newtype Test a =
     , MonadThrow
     , MonadCatch
     )
-
--- | The name of a property.
---
---   Should be constructed using `OverloadedStrings`:
---
--- @
---   "apples" :: PropertyName
--- @
---
-newtype PropertyName =
-  PropertyName {
-      unPropertyName :: String
-    } deriving (Eq, Ord, Show, IsString, Semigroup, Lift)
 
 -- | The acceptable occurrence of false positives
 --
@@ -482,7 +469,7 @@ newtype ShrinkRetries =
 data Group =
   Group {
       groupName :: !GroupName
-    , groupProperties :: ![(PropertyName, Property)]
+    , groupProperties :: ![(Text, Property)]
     }
 
 -- | The name of a group of properties.

@@ -21,8 +21,9 @@ import qualified Data.List as List
 import           Data.Map (Map)
 import qualified Data.Map as Map
 import qualified Data.Ord as Ord
+import           Data.Text (Text)
+import qualified Data.Text as Text
 
-import           Hedgehog.Internal.Property (PropertyName(..))
 import           Hedgehog.Internal.Source (LineNo(..), ColumnNo(..))
 
 #if __GLASGOW_HASKELL__ < 808
@@ -37,7 +38,7 @@ newtype PropertySource =
       propertySource :: Pos String
     } deriving (Eq, Ord, Show)
 
-readProperties :: MonadIO m => String -> FilePath -> m (Map PropertyName PropertySource)
+readProperties :: MonadIO m => String -> FilePath -> m (Map Text PropertySource)
 readProperties prefix path =
   findProperties prefix path <$> liftIO (readFile path)
 
@@ -63,10 +64,10 @@ takeHead = \case
   x : _ ->
     Just x
 
-findProperties :: String -> FilePath -> String -> Map PropertyName PropertySource
+findProperties :: String -> FilePath -> String -> Map Text PropertySource
 findProperties prefix path =
   Map.map PropertySource .
-  Map.mapKeysMonotonic PropertyName .
+  Map.mapKeysMonotonic Text.pack .
   Map.filterWithKey (\k _ -> List.isPrefixOf prefix k) .
   findDeclarations path
 

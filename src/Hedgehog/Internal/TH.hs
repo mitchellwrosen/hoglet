@@ -11,6 +11,8 @@ module Hedgehog.Internal.TH (
 import qualified Data.List as List
 import qualified Data.Map as Map
 import qualified Data.Ord as Ord
+import           Data.Text (Text)
+import qualified Data.Text as Text
 
 import           Hedgehog.Internal.Discovery
 import           Hedgehog.Internal.Property
@@ -66,13 +68,13 @@ discoverPrefix prefix = joinCode $ do
 
   return [|| Group $$(moduleName) $$(listTE names) ||]
 
-mkNamedProperty :: PropertyName -> TExpQ (PropertyName, Property)
+mkNamedProperty :: Text -> TExpQ (Text, Property)
 mkNamedProperty name =
   [|| (name, $$(unsafeProperty name)) ||]
 
-unsafeProperty :: PropertyName -> TExpQ Property
+unsafeProperty :: Text -> TExpQ Property
 unsafeProperty =
-  unsafeCodeCoerce . pure . VarE . mkName . unPropertyName
+  unsafeCodeCoerce . pure . VarE . mkName . Text.unpack
 
 listTE :: [TExpQ a] -> TExpQ [a]
 listTE xs =

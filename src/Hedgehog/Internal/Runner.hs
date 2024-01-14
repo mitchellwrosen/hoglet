@@ -32,6 +32,7 @@ import qualified Control.Concurrent.STM.TVar as TVar
 import           Control.Exception.Safe (catchAny)
 import           Control.Monad.IO.Class (MonadIO(..))
 import           Data.Maybe (isJust)
+import           Data.Text (Text)
 
 import           Hedgehog.Internal.Config
 import           Hedgehog.Internal.Gen (evalGenT)
@@ -39,7 +40,7 @@ import           Hedgehog.Internal.Prelude
 import           Hedgehog.Internal.Property (DiscardCount(..), ShrinkCount(..))
 import           Hedgehog.Internal.Property (Group(..), GroupName(..))
 import           Hedgehog.Internal.Property (Journal(..), Coverage(..), CoverCount(..))
-import           Hedgehog.Internal.Property (Property(..), PropertyConfig(..), PropertyName(..))
+import           Hedgehog.Internal.Property (Property(..), PropertyConfig(..))
 import           Hedgehog.Internal.Property (Test, Failure(..), runTest)
 import           Hedgehog.Internal.Property (ShrinkLimit, ShrinkRetries, withTests, withSkip)
 import           Hedgehog.Internal.Property (TerminationCriteria(..))
@@ -378,7 +379,7 @@ checkRegion ::
      MonadIO m
   => Region
   -> UseColor
-  -> Maybe PropertyName
+  -> Maybe Text
   -> Size
   -> Seed
   -> Property
@@ -409,7 +410,7 @@ checkNamed ::
      MonadIO m
   => Region
   -> UseColor
-  -> Maybe PropertyName
+  -> Maybe Text
   -> Maybe Seed
   -> Property
   -> m (Report Result)
@@ -480,7 +481,7 @@ checkGroupWith ::
   -> Verbosity
   -> UseColor
   -> Seed
-  -> [(PropertyName, Property)]
+  -> [(Text, Property)]
   -> IO Summary
 checkGroupWith n verbosity color seed props =
   displayRegion $ \sregion -> do

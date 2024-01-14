@@ -47,7 +47,6 @@ module Hedgehog (
   -- * Properties
     Property
   , Group(..)
-  , PropertyName
   , GroupName
 
   , property
@@ -152,7 +151,7 @@ import           Hedgehog.Internal.Property (evalEither, evalEitherM, evalExcept
 import           Hedgehog.Internal.Property (footnote, footnoteShow)
 import           Hedgehog.Internal.Property (forAll, forAllWith)
 import           Hedgehog.Internal.Property (LabelName)
-import           Hedgehog.Internal.Property (Property, PropertyName)
+import           Hedgehog.Internal.Property (Property)
 import           Hedgehog.Internal.Property (Group(..), GroupName)
 import           Hedgehog.Internal.Property (Confidence, verifiedTermination, withConfidence)
 import           Hedgehog.Internal.Property (ShrinkLimit, withShrinks)
