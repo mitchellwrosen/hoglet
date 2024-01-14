@@ -3,7 +3,7 @@ module Hedgehog.Internal.Tripping (
     tripping
   ) where
 
-import           Hedgehog.Internal.Property (MonadTest, Diff(..), success, failWith)
+import           Hedgehog.Internal.Property (Test, Diff(..), success, failWith)
 import           Hedgehog.Internal.Show (valueDiff, mkValue, showPretty)
 import           Hedgehog.Internal.Source (HasCallStack, withFrozenCallStack)
 
@@ -22,11 +22,11 @@ import           Hedgehog.Internal.Source (HasCallStack, withFrozenCallStack)
 -- trippingShowRead a = tripping a show readEither
 -- @
 tripping ::
-     (MonadTest m, Applicative f, Show b, Show (f a), Eq (f a), HasCallStack)
+     (Applicative f, Show b, Show (f a), Eq (f a), HasCallStack)
   => a
   -> (a -> b)
   -> (b -> f a)
-  -> m ()
+  -> Test ()
 tripping x encode decode =
   let
     mx =

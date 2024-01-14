@@ -51,7 +51,6 @@ module Hedgehog (
   , GroupName
 
   , property
-  , test
 
   , forAll
   , forAllWith
@@ -96,8 +95,6 @@ module Hedgehog (
 
   -- * Tests
   , Test
-  , TestT
-  , MonadTest(..)
   , annotate
   , annotateShow
   , footnote
@@ -154,14 +151,14 @@ import           Hedgehog.Internal.Property (eval, evalNF, evalM, evalIO)
 import           Hedgehog.Internal.Property (evalEither, evalEitherM, evalExceptT, evalMaybe, evalMaybeM)
 import           Hedgehog.Internal.Property (footnote, footnoteShow)
 import           Hedgehog.Internal.Property (forAll, forAllWith)
-import           Hedgehog.Internal.Property (LabelName, MonadTest(..))
+import           Hedgehog.Internal.Property (LabelName)
 import           Hedgehog.Internal.Property (Property, PropertyName)
 import           Hedgehog.Internal.Property (Group(..), GroupName)
 import           Hedgehog.Internal.Property (Confidence, verifiedTermination, withConfidence)
 import           Hedgehog.Internal.Property (ShrinkLimit, withShrinks)
 import           Hedgehog.Internal.Property (ShrinkRetries, withRetries)
 import           Hedgehog.Internal.Property (Skip, withSkip)
-import           Hedgehog.Internal.Property (Test, TestT, property, test)
+import           Hedgehog.Internal.Property (Test, property)
 import           Hedgehog.Internal.Property (TestLimit, withTests)
 import           Hedgehog.Internal.Property (collect, label)
 import           Hedgehog.Internal.Range (Range, Size(..))

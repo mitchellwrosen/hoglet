@@ -29,18 +29,18 @@ module Hedgehog.Internal.Runner (
 
 import           Control.Concurrent.STM (TVar, atomically)
 import qualified Control.Concurrent.STM.TVar as TVar
-import           Control.Exception.Safe (MonadCatch, catchAny)
+import           Control.Exception.Safe (catchAny)
 import           Control.Monad.IO.Class (MonadIO(..))
 import           Data.Maybe (isJust)
 
 import           Hedgehog.Internal.Config
-import           Hedgehog.Internal.Gen (GenT, evalGenT)
+import           Hedgehog.Internal.Gen (evalGenT)
 import           Hedgehog.Internal.Prelude
 import           Hedgehog.Internal.Property (DiscardCount(..), ShrinkCount(..))
 import           Hedgehog.Internal.Property (Group(..), GroupName(..))
 import           Hedgehog.Internal.Property (Journal(..), Coverage(..), CoverCount(..))
 import           Hedgehog.Internal.Property (Property(..), PropertyConfig(..), PropertyName(..))
-import           Hedgehog.Internal.Property (TestT, Failure(..), runTestT)
+import           Hedgehog.Internal.Property (Test, Failure(..), runTest)
 import           Hedgehog.Internal.Property (ShrinkLimit, ShrinkRetries, withTests, withSkip)
 import           Hedgehog.Internal.Property (TerminationCriteria(..))
 import           Hedgehog.Internal.Property (TestCount(..), PropertyCount(..))
@@ -203,17 +203,14 @@ skipToShrink (ShrinkPath shrinkPath) updateUI =
     loop 0 shrinkPath
 
 checkReport ::
-     forall m.
-     MonadIO m
-  => MonadCatch m
-  => PropertyConfig
+     PropertyConfig
   -> Size
   -> Seed
-  -> TestT (GenT m) ()
-  -> (Report Progress -> m ())
-  -> m (Report Result)
+  -> Test ()
+  -> (Report Progress -> IO ())
+  -> IO (Report Result)
 checkReport cfg size0 seed0 test0 updateUI = do
-  skip <- liftIO $ resolveSkip $ propertySkip cfg
+  skip <- resolveSkip $ propertySkip cfg
 
   let
     (mSkipToTest, mSkipToShrink) =
@@ -258,7 +255,7 @@ checkReport cfg size0 seed0 test0 updateUI = do
       -> Size
       -> Seed
       -> Coverage CoverCount
-      -> m (Report Result)
+      -> IO (Report Result)
     loop !tests !discards !size !seed !coverage0 = do
       updateUI $ Report tests discards coverage0 seed0 Running
 
@@ -342,14 +339,14 @@ checkReport cfg size0 seed0 test0 updateUI = do
                 loop tests (discards + 1) (size + 1) s1 coverage0
             (Just _, Just shrinkPath) -> do
               node <-
-                runTreeT . evalGenT size s0 . runTestT $ test
+                runTreeT . evalGenT size s0 . runTest $ test
               let
                 mkReport =
                   Report (tests + 1) discards coverage0 seed0
               mkReport <$> skipToShrink shrinkPath (updateUI . mkReport) node
             _ -> do
               node@(NodeT x _) <-
-                runTreeT . evalGenT size s0 . runTestT $ test
+                runTreeT . evalGenT size s0 . runTest $ test
               case x of
                 Nothing ->
                   loop tests (discards + 1) (size + 1) s1 coverage0
