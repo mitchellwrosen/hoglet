@@ -20,8 +20,6 @@ description:
   Generate hundreds of test cases automatically, exposing even the
   most insidious of corner cases. Failures are automatically simplified, giving
   developers coherent, intelligible error messages.
-  .
-  To get started quickly, see the <https://github.com/hedgehogqa/haskell-hedgehog/tree/master/hedgehog-example examples>.
 category:
   Testing
 license:

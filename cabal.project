@@ -1,16 +1,5 @@
 packages:
   hedgehog
-  hedgehog-corpus
-  hedgehog-dieharder
-  hedgehog-example
-  hedgehog-quickcheck
-  hedgehog-test-laws
-
--- would like to do this but cabal applies it to
--- _all_ packages not just local :wtf:
---    https://github.com/haskell/cabal/issues/3883
--- program-options
---   ghc-options: -Wall -Werror
 
 if impl(ghc >= 9.8)
   package hedgehog
@@ -18,13 +7,3 @@ if impl(ghc >= 9.8)
 else
   package hedgehog
     ghc-options: -Wall -Werror
-package hedgehog-corpus
-  ghc-options: -Wall -Werror
-package hedgehog-dieharder
-  ghc-options: -Wall -Werror
-package hedgehog-example
-  ghc-options: -Wall -Werror
-package hedgehog-quickcheck
-  ghc-options: -Wall -Werror
-package hedgehog-test-laws
-  ghc-options: -Wall -Werror
