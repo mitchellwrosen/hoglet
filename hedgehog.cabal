@@ -89,6 +89,10 @@ library
     Hedgehog.Main
     Hedgehog.Range
 
+  default-language:
+    Haskell2010
+
+  other-modules:
     Hedgehog.Internal.Barbie
     Hedgehog.Internal.Config
     Hedgehog.Internal.Discovery
@@ -112,6 +116,3 @@ library
     Hedgehog.Internal.TH
     Hedgehog.Internal.Tree
     Hedgehog.Internal.Tripping
-
-  default-language:
-    Haskell2010
