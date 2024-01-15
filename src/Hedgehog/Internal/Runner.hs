@@ -33,7 +33,7 @@ import           Hedgehog.Internal.Property (Group(..), GroupName(..))
 import           Hedgehog.Internal.Property (Journal(..), Coverage(..), CoverCount(..))
 import           Hedgehog.Internal.Property (Property(..), PropertyConfig(..))
 import           Hedgehog.Internal.Property (Test, Failure(..), runTest)
-import           Hedgehog.Internal.Property (ShrinkLimit, ShrinkRetries, withTests, withSkip)
+import           Hedgehog.Internal.Property (ShrinkLimit, withTests, withSkip)
 import           Hedgehog.Internal.Property (TerminationCriteria(..))
 import           Hedgehog.Internal.Property (TestCount(..), PropertyCount(..))
 import           Hedgehog.Internal.Property (confidenceSuccess, confidenceFailure)
@@ -93,30 +93,15 @@ isFailure = \case
   _ ->
     False
 
-isSuccess :: Tree (Either x a, b) -> Bool
-isSuccess =
-  not . isFailure
-
-runTreeN ::
-     ShrinkRetries
-  -> Tree (Either x a, b)
-  -> Tree (Either x a, b)
-runTreeN n m =
-  if n > 0 && isSuccess m then
-    runTreeN (n - 1) m
-  else
-    m
-
 takeSmallest ::
      MonadIO m
   => ShrinkCount
   -> ShrinkPath
   -> ShrinkLimit
-  -> ShrinkRetries
   -> (Progress -> m ())
   -> Maybe (Tree (Either Failure (), Journal))
   -> m Result
-takeSmallest shrinks0 (ShrinkPath shrinkPath0) slimit retries updateUI =
+takeSmallest shrinks0 (ShrinkPath shrinkPath0) slimit updateUI =
   let
     loop shrinks revShrinkPath = \case
       Tree (x, (Journal logs)) xs ->
@@ -134,10 +119,9 @@ takeSmallest shrinks0 (ShrinkPath shrinkPath0) slimit retries updateUI =
               -- if we've hit the shrink limit, don't shrink any further
               pure $ Failed failure
             else
-              findM (zip [0..] xs) (Failed failure) $ \(n, m) -> do
-                let o = runTreeN retries m
-                if isFailure o then
-                  Just <$> loop (shrinks + 1) (n : revShrinkPath) o
+              findM (zip [0..] xs) (Failed failure) $ \(n, m) ->
+                if isFailure m then
+                  Just <$> loop (shrinks + 1) (n : revShrinkPath) m
                 else
                   return Nothing
 
@@ -342,7 +326,6 @@ checkReport cfg size0 seed0 test updateUI = do
                         0
                         (ShrinkPath [])
                         (propertyShrinkLimit cfg)
-                        (propertyShrinkRetries cfg)
                         (updateUI . mkReport)
                         node
 

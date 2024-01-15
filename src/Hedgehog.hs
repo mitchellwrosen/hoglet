@@ -75,9 +75,6 @@ module Hedgehog (
   , withShrinks
   , ShrinkLimit
 
-  , withRetries
-  , ShrinkRetries
-
   , withSkip
   , Skip
 
@@ -132,7 +129,6 @@ import           Hedgehog.Internal.Property (Property)
 import           Hedgehog.Internal.Property (Group(..), GroupName)
 import           Hedgehog.Internal.Property (Confidence, verifiedTermination, withConfidence)
 import           Hedgehog.Internal.Property (ShrinkLimit, withShrinks)
-import           Hedgehog.Internal.Property (ShrinkRetries, withRetries)
 import           Hedgehog.Internal.Property (Skip, withSkip)
 import           Hedgehog.Internal.Property (Test, property)
 import           Hedgehog.Internal.Property (TestLimit, withTests)

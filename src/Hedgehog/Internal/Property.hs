@@ -33,11 +33,9 @@ module Hedgehog.Internal.Property (
   , ShrinkCount(..)
   , Skip(..)
   , ShrinkPath(..)
-  , ShrinkRetries(..)
   , withTests
   , withDiscards
   , withShrinks
-  , withRetries
   , withSkip
   , property
   , forAll
@@ -177,7 +175,6 @@ data PropertyConfig =
   PropertyConfig {
       propertyDiscardLimit :: !DiscardLimit
     , propertyShrinkLimit :: !ShrinkLimit
-    , propertyShrinkRetries :: !ShrinkRetries
     , propertyTerminationCriteria :: !TerminationCriteria
 
     -- | If this is 'Nothing', we take the Skip from the environment variable
@@ -418,25 +415,6 @@ shrinkPathDecompress str =
     sp <- concat <$>
       traverse (\(mNum, mCount) -> replicate <$> mCount <*> mNum) spGroups
     Just $ ShrinkPath sp
-
--- | The number of times to re-run a test during shrinking. This is useful if
---   you are testing something which fails non-deterministically and you want to
---   increase the change of getting a good shrink.
---
---   If you are doing parallel state machine testing, you should probably set
---   shrink retries to something like @10@. This will mean that during
---   shrinking, a parallel test case requires 10 successful runs before it is
---   passes and we try a different shrink.
---
---   Can be constructed using numeric literals:
---
--- @
---   0 :: ShrinkRetries
--- @
---
-newtype ShrinkRetries =
-  ShrinkRetries Int
-  deriving (Eq, Ord, Show, Num, Enum, Real, Integral)
 
 -- | A named collection of property tests.
 --
@@ -845,8 +823,6 @@ defaultConfig =
         100
     , propertyShrinkLimit =
         1000
-    , propertyShrinkRetries =
-        0
     , propertyTerminationCriteria =
         NoConfidenceTermination defaultMinTests
     , propertySkip =
@@ -928,14 +904,6 @@ withDiscards n =
 withShrinks :: ShrinkLimit -> Property -> Property
 withShrinks n =
   mapConfig $ \config -> config { propertyShrinkLimit = n }
-
--- | Set the number of times a property will be executed for each shrink before
---   the test runner gives up and tries a different shrink. See 'ShrinkRetries'
---   for more information.
---
-withRetries :: ShrinkRetries -> Property -> Property
-withRetries n =
-  mapConfig $ \config -> config { propertyShrinkRetries = n }
 
 -- | Set the target that a property will skip to before it starts to run.
 --
