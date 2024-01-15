@@ -234,9 +234,9 @@ filter p = mapMaybe (fromPred p)
 mapMaybe :: (a -> Maybe b) -> Tree a -> Maybe (Tree b)
 mapMaybe p =
   catMaybes .
-  runTreeMaybeT .
+  runTreeMaybeT2 .
   mapMaybeMaybeT p .
-  hoist lift
+  hoist (Just . runIdentity)
 
 -- | Lazily run the discard effects through the tree and reify it a
 --   @Maybe (Tree a)@.
@@ -245,10 +245,11 @@ mapMaybe p =
 --
 --   Discards in the child nodes of the tree are simply removed.
 --
-runTreeMaybe :: TreeT (MaybeT Identity) a -> Maybe (Tree a)
+runTreeMaybe :: TreeT Maybe a -> Maybe (Tree a)
 runTreeMaybe =
   mapMaybe id .
-  runTreeMaybeT
+  runTreeMaybeT .
+  hoist (MaybeT . pure)
 
 -- | Run the discard effects through the tree and reify them as 'Maybe' values
 --   at the nodes.
@@ -260,22 +261,27 @@ runTreeMaybeT =
   runMaybeT .
   distributeTreeT
 
+runTreeMaybeT2 :: TreeT Maybe a -> Tree (Maybe a)
+runTreeMaybeT2 =
+  runTreeMaybeT .
+  hoist (MaybeT . pure)
+
 -- | Returns a tree containing only elements that match the predicate.
 --
 --   If the root of the tree does not match the predicate then 'Nothing' is
 --   returned.
 --
-filterMaybeT :: (a -> Bool) -> TreeT (MaybeT Identity) a -> TreeT (MaybeT Identity) a
+filterMaybeT :: (a -> Bool) -> TreeT Maybe a -> TreeT Maybe a
 filterMaybeT p = mapMaybeMaybeT (fromPred p)
 
-mapMaybeMaybeT :: (a -> Maybe b) -> TreeT (MaybeT Identity) a -> TreeT (MaybeT Identity) b
+mapMaybeMaybeT :: (a -> Maybe b) -> TreeT Maybe a -> TreeT Maybe b
 mapMaybeMaybeT p t =
-  case runTreeMaybeT t of
+  case runTreeMaybeT2 t of
     Tree (Node Nothing _) ->
-      TreeT . MaybeT . Identity $ Nothing
+      TreeT Nothing
     Tree (Node (Just x) xs) ->
       case p x of
-        Nothing -> TreeT . MaybeT . Identity $ Nothing
+        Nothing -> TreeT Nothing
         Just x' ->
           hoist generalize $
             Tree . Node x' $

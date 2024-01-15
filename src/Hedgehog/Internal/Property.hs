@@ -76,13 +76,9 @@ module Hedgehog.Internal.Property (
 
   , eval
   , evalNF
-  , evalM
-  , evalIO
   , evalEither
-  , evalEitherM
   , evalExceptT
   , evalMaybe
-  , evalMaybeM
 
   -- * Coverage
   , Coverage(..)
@@ -128,10 +124,7 @@ module Hedgehog.Internal.Property (
   ) where
 
 import           Control.DeepSeq (NFData, rnf)
-import           Control.Exception.Safe (MonadThrow, MonadCatch)
 import           Control.Exception.Safe (SomeException(..), displayException)
-import           Control.Monad ((<=<))
-import           Control.Monad.IO.Class (MonadIO(..))
 import           Control.Monad.Trans.Class (MonadTrans(..))
 import           Control.Monad.Trans.Except (ExceptT(..), runExceptT)
 import qualified Control.Monad.Trans.Writer.Lazy as Lazy
@@ -149,7 +142,7 @@ import           Data.Text (Text)
 import           Data.Typeable (typeOf)
 
 import           Hedgehog.Internal.Exception
-import           Hedgehog.Internal.Gen (Gen, GenT)
+import           Hedgehog.Internal.Gen (Gen)
 import qualified Hedgehog.Internal.Gen as Gen
 import           Hedgehog.Internal.Prelude
 import           Hedgehog.Internal.Show
@@ -174,14 +167,11 @@ data Property =
 --
 newtype Test a =
   TestT {
-      unTest :: ExceptT Failure (Lazy.WriterT Journal (GenT IO)) a
+      unTest :: ExceptT Failure (Lazy.WriterT Journal Gen) a
     } deriving (
       Functor
     , Applicative
     , Monad
-    , MonadIO
-    , MonadThrow
-    , MonadCatch
     )
 
 -- | The acceptable occurrence of false positives
@@ -608,11 +598,11 @@ instance MonadFail Test where
   fail err =
     TestT . ExceptT . pure . Left $ Failure Nothing err Nothing
 
-mkTest :: GenT IO (Either Failure a, Journal) -> Test a
+mkTest :: Gen (Either Failure a, Journal) -> Test a
 mkTest =
   TestT . ExceptT . Lazy.WriterT
 
-runTest :: Test a -> GenT IO (Either Failure a, Journal)
+runTest :: Test a -> Gen (Either Failure a, Journal)
 runTest =
   Lazy.runWriterT . runExceptT . unTest
 
@@ -784,24 +774,6 @@ evalNF x =
   in
     either (withFrozenCallStack (failExceptionWith messages)) pure (tryEvaluate (rnf x)) $> x
 
--- | Fails the test if the action throws an exception.
---
---   /The benefit of using this over simply letting the exception bubble up is/
---   /that the location of the closest 'evalM' will be shown in the output./
---
-evalM :: (HasCallStack) => Test a -> Test a
-evalM m =
-  either (withFrozenCallStack failException) pure =<< tryAll m
-
--- | Fails the test if the 'IO' action throws an exception.
---
---   /The benefit of using this over 'liftIO' is that the location of the/
---   /exception will be shown in the output./
---
-evalIO :: (HasCallStack) => IO a -> Test a
-evalIO m =
-  either (withFrozenCallStack failException) pure =<< liftIO (tryAll m)
-
 -- | Fails the test if the 'Either' is 'Left', otherwise returns the value in
 --   the 'Right'.
 --
@@ -811,13 +783,6 @@ evalEither = \case
     withFrozenCallStack $ failWith Nothing $ showPretty x
   Right x ->
     pure x
-
--- | Fails the test if the action throws an exception, or if the
---   'Either' is 'Left', otherwise returns the value in the 'Right'.
---
-evalEitherM :: (Show x, HasCallStack) => Test (Either x a) -> Test a
-evalEitherM =
-  evalEither <=< evalM
 
 -- | Fails the test if the 'ExceptT' is 'Left', otherwise returns the value in
 --   the 'Right'.
@@ -836,13 +801,6 @@ evalMaybe = \case
   Just x ->
     pure x
 
--- | Fails the test if the action throws an exception, or if the
---   'Maybe' is 'Nothing', otherwise returns the value in the 'Just'.
---
-evalMaybeM :: (Show a, HasCallStack) => Test (Maybe a) -> Test a
-evalMaybeM =
-  evalMaybe <=< evalM
-
 ------------------------------------------------------------------------
 -- PropertyT
 
@@ -852,7 +810,7 @@ evalMaybeM =
 --   /rendering function. This is useful for values which don't have a/
 --   /'Show' instance./
 --
-forAllWithT :: (HasCallStack) => (a -> String) -> GenT IO a -> Test a
+forAllWithT :: (HasCallStack) => (a -> String) -> Gen a -> Test a
 forAllWithT render gen = do
   x <- TestT (lift (lift gen))
   withFrozenCallStack $ annotate (render x)
@@ -866,12 +824,12 @@ forAllWithT render gen = do
 --
 forAllWith :: (HasCallStack) => (a -> String) -> Gen a -> Test a
 forAllWith render gen =
-  withFrozenCallStack $ forAllWithT render $ Gen.generalize gen
+  withFrozenCallStack $ forAllWithT render $ gen
 
 -- | Generates a random input for the test by running the provided generator.
 --
 --
-forAllT :: (Show a, HasCallStack) => GenT IO a -> Test a
+forAllT :: (Show a, HasCallStack) => Gen a -> Test a
 forAllT gen =
   withFrozenCallStack $ forAllWithT showPretty gen
 
@@ -885,7 +843,7 @@ forAll gen =
 --
 discard :: Test a
 discard =
-  TestT (lift (lift (Gen.generalize Gen.discard)))
+  TestT (lift (lift Gen.discard))
 
 ------------------------------------------------------------------------
 -- Property
@@ -1002,7 +960,7 @@ withSkip s =
 property :: HasCallStack => Test () -> Property
 property m =
   Property defaultConfig $
-    withFrozenCallStack (evalM m)
+    withFrozenCallStack m
 
 ------------------------------------------------------------------------
 -- Coverage

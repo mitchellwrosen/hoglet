@@ -83,7 +83,6 @@ module Hedgehog (
 
   -- * Generating Test Data
   , Gen
-  , GenT
 
   , Range
   , Size(..)
@@ -105,13 +104,9 @@ module Hedgehog (
 
   , eval
   , evalNF
-  , evalM
-  , evalIO
   , evalEither
-  , evalEitherM
   , evalExceptT
   , evalMaybe
-  , evalMaybeM
 
   -- * Coverage
   , LabelName
@@ -133,14 +128,14 @@ module Hedgehog (
 
 import           Data.Functor.Classes (Eq1, eq1, Ord1, compare1, Show1, showsPrec1)
 
-import           Hedgehog.Internal.Gen (Gen, GenT)
+import           Hedgehog.Internal.Gen (Gen)
 import           Hedgehog.Internal.Property (annotate, annotateShow)
 import           Hedgehog.Internal.Property (assert, diff, (===), (/==))
 import           Hedgehog.Internal.Property (classify, cover)
 import           Hedgehog.Internal.Property (discard, failure, success)
 import           Hedgehog.Internal.Property (DiscardLimit, withDiscards)
-import           Hedgehog.Internal.Property (eval, evalNF, evalM, evalIO)
-import           Hedgehog.Internal.Property (evalEither, evalEitherM, evalExceptT, evalMaybe, evalMaybeM)
+import           Hedgehog.Internal.Property (eval, evalNF)
+import           Hedgehog.Internal.Property (evalEither, evalExceptT, evalMaybe)
 import           Hedgehog.Internal.Property (footnote, footnoteShow)
 import           Hedgehog.Internal.Property (forAll, forAllWith)
 import           Hedgehog.Internal.Property (LabelName)

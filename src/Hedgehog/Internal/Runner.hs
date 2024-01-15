@@ -29,8 +29,8 @@ module Hedgehog.Internal.Runner (
 
 import           Control.Concurrent.STM (TVar, atomically)
 import qualified Control.Concurrent.STM.TVar as TVar
-import           Control.Exception.Safe (catchAny)
 import           Control.Monad.IO.Class (MonadIO(..))
+import           Data.Functor.Identity (Identity, runIdentity)
 import           Data.Maybe (isJust)
 import           Data.Text (Text)
 
@@ -123,7 +123,7 @@ takeSmallest ::
   -> ShrinkLimit
   -> ShrinkRetries
   -> (Progress -> m ())
-  -> NodeT m (Maybe (Either Failure (), Journal))
+  -> NodeT Identity (Maybe (Either Failure (), Journal))
   -> m Result
 takeSmallest shrinks0 (ShrinkPath shrinkPath0) slimit retries updateUI =
   let
@@ -147,7 +147,7 @@ takeSmallest shrinks0 (ShrinkPath shrinkPath0) slimit retries updateUI =
               pure $ Failed failure
             else
               findM (zip [0..] xs) (Failed failure) $ \(n, m) -> do
-                o <- runTreeN retries m
+                let o = runIdentity (runTreeN retries m)
                 if isFailure o then
                   Just <$> loop (shrinks + 1) (n : revShrinkPath) o
                 else
@@ -169,7 +169,7 @@ skipToShrink ::
      MonadIO m
   => ShrinkPath
   -> (Progress -> m ())
-  -> NodeT m (Maybe (Either Failure (), Journal))
+  -> NodeT Identity (Maybe (Either Failure (), Journal))
   -> m Result
 skipToShrink (ShrinkPath shrinkPath) updateUI =
   let
@@ -196,7 +196,7 @@ skipToShrink (ShrinkPath shrinkPath) updateUI =
           [] ->
             pure GaveUp
           (x:_) -> do
-            o <- runTreeT x
+            let o = runIdentity (runTreeT x)
             loop (shrinks + 1) ss o
   in
     loop 0 shrinkPath
@@ -208,7 +208,7 @@ checkReport ::
   -> Test ()
   -> (Report Progress -> IO ())
   -> IO (Report Result)
-checkReport cfg size0 seed0 test0 updateUI = do
+checkReport cfg size0 seed0 test updateUI = do
   skip <- resolveSkip $ propertySkip cfg
 
   let
@@ -220,9 +220,6 @@ checkReport cfg size0 seed0 test0 updateUI = do
           (Just (t, d), Nothing)
         SkipToShrink t d s ->
           (Just (t, d), Just s)
-
-    test =
-      catchAny test0 (fail . show)
 
     terminationCriteria =
       propertyTerminationCriteria cfg
@@ -337,15 +334,16 @@ checkReport cfg size0 seed0 test0 updateUI = do
               | d > discards ->
                 loop tests (discards + 1) (size + 1) s1 coverage0
             (Just _, Just shrinkPath) -> do
-              node <-
-                runTreeT . evalGenT size s0 . runTest $ test
+              let
+                node = runIdentity . runTreeT . evalGenT size s0 . runTest $ test
               let
                 mkReport =
                   Report (tests + 1) discards coverage0 seed0
               mkReport <$> skipToShrink shrinkPath (updateUI . mkReport) node
             _ -> do
-              node@(NodeT x _) <-
-                runTreeT . evalGenT size s0 . runTest $ test
+              let
+                node@(NodeT x _) =
+                  runIdentity . runTreeT . evalGenT size s0 . runTest $ test
               case x of
                 Nothing ->
                   loop tests (discards + 1) (size + 1) s1 coverage0
