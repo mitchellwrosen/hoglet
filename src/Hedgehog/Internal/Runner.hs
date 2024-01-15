@@ -23,7 +23,7 @@ module Hedgehog.Internal.Runner (
 import           Control.Concurrent.STM (TVar, atomically)
 import qualified Control.Concurrent.STM.TVar as TVar
 import           Control.Monad.IO.Class (MonadIO(..))
-import           Data.Functor.Identity (Identity, runIdentity)
+import           Data.Functor.Identity (Identity)
 import           Data.Maybe (isJust)
 import           Data.Text (Text)
 
@@ -46,7 +46,7 @@ import           Hedgehog.Internal.Range (Size)
 import           Hedgehog.Internal.Region
 import           Hedgehog.Internal.Report
 import qualified Hedgehog.Internal.Seed as Seed
-import           Hedgehog.Internal.Tree (TreeT(..), NodeT(..))
+import           Hedgehog.Internal.Tree (Tree(..), NodeT(..))
 
 import           Prelude
 
@@ -99,16 +99,16 @@ isSuccess =
   not . isFailure
 
 runTreeN ::
-     Monad m
-  => ShrinkRetries
-  -> TreeT m (Either x a, b)
-  -> m (NodeT m (Either x a, b))
-runTreeN n m = do
-  o <- runTreeT m
+     ShrinkRetries
+  -> Tree (Either x a, b)
+  -> NodeT Identity (Either x a, b)
+runTreeN n m =
+  let o = runTree m
+  in
   if n > 0 && isSuccess o then
     runTreeN (n - 1) m
   else
-    pure o
+    o
 
 takeSmallest ::
      MonadIO m
@@ -138,7 +138,7 @@ takeSmallest shrinks0 (ShrinkPath shrinkPath0) slimit retries updateUI =
               pure $ Failed failure
             else
               findM (zip [0..] xs) (Failed failure) $ \(n, m) -> do
-                let o = runIdentity (runTreeN retries m)
+                let o = runTreeN retries m
                 if isFailure o then
                   Just <$> loop (shrinks + 1) (n : revShrinkPath) o
                 else
@@ -184,7 +184,7 @@ skipToShrink (ShrinkPath shrinkPath) updateUI =
           [] ->
             pure GaveUp
           (x:_) -> do
-            let o = runIdentity (runTreeT x)
+            let o = runTree x
             loop (shrinks + 1) ss o
   in
     maybe (pure GaveUp) (loop 0 shrinkPath)
@@ -323,7 +323,7 @@ checkReport cfg size0 seed0 test updateUI = do
                 loop tests (discards + 1) (size + 1) s1 coverage0
             (Just _, Just shrinkPath) -> do
               let
-                node = fmap (runIdentity . runTreeT) . runGen size s0 . runTest $ test
+                node = fmap runTree . runGen size s0 . runTest $ test
               let
                 mkReport =
                   Report (tests + 1) discards coverage0 seed0
@@ -331,7 +331,7 @@ checkReport cfg size0 seed0 test updateUI = do
             _ -> do
               let
                 node =
-                  fmap (runIdentity . runTreeT) . runGen size s0 . runTest $ test
+                  fmap runTree . runGen size s0 . runTest $ test
               case node of
                 Nothing ->
                   loop tests (discards + 1) (size + 1) s1 coverage0

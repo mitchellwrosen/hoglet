@@ -1,6 +1,8 @@
 {-# OPTIONS_HADDOCK not-home #-}
 {-# LANGUAGE CPP #-}
 {-# LANGUAGE ConstraintKinds #-}
+{-# LANGUAGE DeriveFunctor #-}
+{-# LANGUAGE DerivingStrategies #-}
 {-# LANGUAGE DoAndIfThenElse #-}
 {-# LANGUAGE FlexibleContexts #-}
 {-# LANGUAGE FlexibleInstances #-}
@@ -11,10 +13,7 @@
 {-# LANGUAGE ScopedTypeVariables #-}
 {-# LANGUAGE TypeFamilies #-}
 module Hedgehog.Internal.Tree (
-    Tree
-  , pattern Tree
-  , TreeT(..)
-  , runTree
+    Tree(..)
   , singleton
   , zipTreeT
   , treeValue
@@ -36,12 +35,8 @@ module Hedgehog.Internal.Tree (
 #if !MIN_VERSION_base(4,18,0)
 import           Control.Applicative (liftA2)
 #endif
-import           Control.Applicative (Alternative(..))
-import           Control.Monad.Morph (MFunctor(..))
-import           Control.Monad.Trans.Class (MonadTrans(..))
 
 import           Data.Functor.Identity (Identity(..))
-import           Data.Functor.Classes (Eq1(..))
 import           Data.Functor.Classes (Show1(..), showsPrec1)
 import           Data.Functor.Classes (showsUnaryWith, showsBinaryWith)
 import qualified Data.List as List
@@ -52,23 +47,11 @@ import           Prelude hiding (filter)
 
 -- | A rose tree.
 --
-type Tree =
-  TreeT Identity
-
--- | Pattern to ease construction / deconstruction of pure trees.
---
-pattern Tree :: NodeT Identity a -> Tree a
-pattern Tree node =
-  TreeT (Identity node)
-{-# COMPLETE Tree #-}
-
--- | An effectful tree, each node in the tree can have an effect before it is
---   produced.
---
-newtype TreeT m a =
-  TreeT {
-      runTreeT :: m (NodeT m a)
+newtype Tree a =
+  Tree {
+      runTree :: NodeT Identity a
     }
+  deriving stock (Eq, Functor)
 
 -- | A node in a rose tree.
 --
@@ -90,20 +73,14 @@ data NodeT m a =
       nodeValue :: a
 
       -- | The children of this 'NodeT'.
-    , nodeChildren :: [TreeT m a]
+    , nodeChildren :: [Tree a]
     } deriving (Eq)
-
--- | Extracts the 'Node' from a 'Tree'.
---
-runTree :: Tree a -> Node a
-runTree =
-  runIdentity . runTreeT
 
 -- | Create a 'TreeT' from a 'NodeT'
 --
-fromNodeT :: Applicative m => NodeT m a -> TreeT m a
+fromNodeT :: NodeT Identity a -> Tree a
 fromNodeT =
-  TreeT . pure
+  Tree
 
 singleton :: a -> Tree a
 singleton =
@@ -119,7 +96,7 @@ treeValue =
 --
 unfold :: (a -> [a]) -> a -> Tree a
 unfold f x =
-  fromNodeT $
+  Tree $
     NodeT x (unfoldForest f x)
 
 -- | Create a forest from a value and an unfolding function.
@@ -132,7 +109,7 @@ unfoldForest f =
 --
 expand :: (a -> [a]) -> Tree a -> Tree a
 expand f (Tree (Node x xs)) =
-  fromNodeT (Node x (map (expand f) xs ++ unfoldForest f x))
+  Tree (Node x (map (expand f) xs ++ unfoldForest f x))
 
 -- | Throw away all but the top @n@ levels of a tree's children.
 --
@@ -168,11 +145,9 @@ flattenTrees =
 
 consChild :: a -> Tree a -> Tree a
 consChild a m =
-  TreeT $ do
-    NodeT x xs <- runTreeT m
-    Identity $
-      NodeT x $
-        singleton a : xs
+  Tree $
+    let NodeT x xs = runTree m
+    in NodeT x $ singleton a : xs
 
 ------------------------------------------------------------------------
 
@@ -241,16 +216,16 @@ interleaveTreeT =
 ------------------------------------------------------------------------
 
 instance Foldable Tree where
-  foldMap f (TreeT mx) =
-    foldMap f (runIdentity mx)
+  foldMap f (Tree mx) =
+    foldMap f mx
 
 instance Foldable Node where
   foldMap f (NodeT x xs) =
     f x `mappend` mconcat (fmap (foldMap f) xs)
 
 instance Traversable Tree where
-  traverse f (TreeT mx) =
-    TreeT <$> traverse (traverse f) mx
+  traverse f (Tree mx) =
+    Tree <$> traverse f mx
 
 instance Traversable Node where
   traverse f (NodeT x xs) =
@@ -259,33 +234,25 @@ instance Traversable Node where
 ------------------------------------------------------------------------
 -- NodeT/TreeT instances
 
-instance (Eq1 m, Eq a) => Eq (TreeT m a) where
-  TreeT m0 == TreeT m1 =
-    liftEq (==) m0 m1
-
 instance Functor m => Functor (NodeT m) where
   fmap f (NodeT x xs) =
     NodeT (f x) (fmap (fmap f) xs)
 
-instance Functor m => Functor (TreeT m) where
-  fmap f =
-    TreeT . fmap (fmap f) . runTreeT
-
-instance Applicative m => Applicative (NodeT m) where
+instance Applicative (NodeT Identity) where
   pure x =
     NodeT x []
   (<*>) (NodeT ab tabs) na@(NodeT a tas) =
     NodeT (ab a) $
       map (<*> (fromNodeT na)) tabs ++ map (fmap ab) tas
 
-instance Applicative m => Applicative (TreeT m) where
+instance Applicative Tree where
   pure =
-    TreeT . pure . pure
-  (<*>) (TreeT mab) (TreeT ma) =
-    TreeT $
-      liftA2 (<*>) mab ma
+    Tree . pure
+  (<*>) (Tree mab) (Tree ma) =
+    Tree $
+      (<*>) mab ma
 
-instance Monad m => Monad (NodeT m) where
+instance Monad (NodeT Identity) where
   return =
     pure
 
@@ -293,28 +260,22 @@ instance Monad m => Monad (NodeT m) where
     case k x of
       NodeT y ys ->
         NodeT y $
-          fmap (TreeT . fmap (>>= k) . runTreeT) xs ++ ys
+          map (Tree . (>>= k) . runTree) xs ++ ys
 
-instance Monad m => Monad (TreeT m) where
+instance Monad Tree where
   return =
     pure
 
   (>>=) m k =
-    TreeT $ do
-      NodeT x xs <- runTreeT m
-      NodeT y ys <- runTreeT (k x)
-      pure . NodeT y $
-        fmap (>>= k) xs ++ ys
-
-instance Alternative m => Alternative (TreeT m) where
-  empty =
-    TreeT empty
-  (<|>) x y =
-    TreeT (runTreeT x <|> runTreeT y)
+    Tree $ do
+      let NodeT x xs = runTree m
+      let NodeT y ys = runTree (k x)
+      NodeT y $
+        map (>>= k) xs ++ ys
 
 zipTreeT :: forall a b. Tree a -> Tree b -> Tree (a, b)
-zipTreeT l0@(TreeT left) r0@(TreeT right) =
-  TreeT $
+zipTreeT l0@(Tree left) r0@(Tree right) =
+  Tree $
     let
       zipNodeT :: NodeT Identity a -> NodeT Identity b -> NodeT Identity (a, b)
       zipNodeT (NodeT a ls) (NodeT b rs) =
@@ -324,20 +285,7 @@ zipTreeT l0@(TreeT left) r0@(TreeT right) =
               , [zipTreeT l0 r1 | r1 <- rs]
               ]
     in
-      zipNodeT <$> left <*> right
-
-instance MonadTrans TreeT where
-  lift f =
-    TreeT $
-      fmap (\x -> NodeT x []) f
-
-instance MFunctor NodeT where
-  hoist f (NodeT x xs) =
-    NodeT x (fmap (hoist f) xs)
-
-instance MFunctor TreeT where
-  hoist f (TreeT m) =
-    TreeT . f $ fmap (hoist f) m
+      zipNodeT left right
 
 ------------------------------------------------------------------------
 -- Show/Show1 instances
@@ -346,7 +294,7 @@ instance (Show1 m, Show a) => Show (NodeT m a) where
   showsPrec =
     showsPrec1
 
-instance (Show1 m, Show a) => Show (TreeT m a) where
+instance (Show a) => Show (Tree a) where
   showsPrec =
     showsPrec1
 
@@ -364,8 +312,8 @@ instance Show1 m => Show1 (NodeT m) where
     in
       showsBinaryWith sp sp2 "NodeT" d x xs
 
-instance Show1 m => Show1 (TreeT m) where
-  liftShowsPrec sp sl d (TreeT m) =
+instance Show1 Tree where
+  liftShowsPrec sp sl d (Tree m) =
     let
       sp1 =
         liftShowsPrec sp sl
@@ -376,7 +324,7 @@ instance Show1 m => Show1 (TreeT m) where
       sp2 =
         liftShowsPrec sp1 sl1
     in
-      showsUnaryWith sp2 "TreeT" d m
+      showsUnaryWith sp2 "TreeT" d (Identity m)
 
 ------------------------------------------------------------------------
 -- Pretty Printing
@@ -385,7 +333,7 @@ instance Show1 m => Show1 (TreeT m) where
 -- Rendering implementation based on the one from containers/Data.Tree
 --
 
-renderTreeTLines :: TreeT Identity String -> [String]
+renderTreeTLines :: Tree String -> [String]
 renderTreeTLines (Tree (Node x xs0)) = do
   lines (renderNodeT x) ++ renderForestLines xs0
 
@@ -397,7 +345,7 @@ renderNodeT xs =
     _ ->
       xs
 
-renderForestLines :: [TreeT Identity String] -> [String]
+renderForestLines :: [Tree String] -> [String]
 renderForestLines xs0 =
   let
     shift hd other =
