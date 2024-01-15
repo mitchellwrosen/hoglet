@@ -23,7 +23,6 @@ module Hedgehog.Internal.Runner (
 import           Control.Concurrent.STM (TVar, atomically)
 import qualified Control.Concurrent.STM.TVar as TVar
 import           Control.Monad.IO.Class (MonadIO(..))
-import           Data.Functor.Identity (Identity)
 import           Data.Maybe (isJust)
 import           Data.Text (Text)
 
@@ -46,7 +45,7 @@ import           Hedgehog.Internal.Range (Size)
 import           Hedgehog.Internal.Region
 import           Hedgehog.Internal.Report
 import qualified Hedgehog.Internal.Seed as Seed
-import           Hedgehog.Internal.Tree (Tree(..), NodeT(..))
+import           Hedgehog.Internal.Tree (Tree(..))
 
 import           Prelude
 
@@ -87,28 +86,26 @@ findM xs0 def p =
           Just x ->
             return x
 
-isFailure :: NodeT m (Either x a, b) -> Bool
+isFailure :: Tree (Either x a, b) -> Bool
 isFailure = \case
-  NodeT (Left _, _) _ ->
+  Tree (Left _, _) _ ->
     True
   _ ->
     False
 
-isSuccess :: NodeT m (Either x a, b) -> Bool
+isSuccess :: Tree (Either x a, b) -> Bool
 isSuccess =
   not . isFailure
 
 runTreeN ::
      ShrinkRetries
   -> Tree (Either x a, b)
-  -> NodeT Identity (Either x a, b)
+  -> Tree (Either x a, b)
 runTreeN n m =
-  let o = runTree m
-  in
-  if n > 0 && isSuccess o then
+  if n > 0 && isSuccess m then
     runTreeN (n - 1) m
   else
-    o
+    m
 
 takeSmallest ::
      MonadIO m
@@ -117,12 +114,12 @@ takeSmallest ::
   -> ShrinkLimit
   -> ShrinkRetries
   -> (Progress -> m ())
-  -> Maybe (NodeT Identity (Either Failure (), Journal))
+  -> Maybe (Tree (Either Failure (), Journal))
   -> m Result
 takeSmallest shrinks0 (ShrinkPath shrinkPath0) slimit retries updateUI =
   let
     loop shrinks revShrinkPath = \case
-      NodeT (x, (Journal logs)) xs ->
+      Tree (x, (Journal logs)) xs ->
         case x of
           Left (Failure loc err mdiff) -> do
             let
@@ -160,12 +157,12 @@ skipToShrink ::
      MonadIO m
   => ShrinkPath
   -> (Progress -> m ())
-  -> Maybe (NodeT Identity (Either Failure (), Journal))
+  -> Maybe (Tree (Either Failure (), Journal))
   -> m Result
 skipToShrink (ShrinkPath shrinkPath) updateUI =
   let
     loop shrinks [] = \case
-      NodeT (x, (Journal logs)) _ ->
+      Tree (x, (Journal logs)) _ ->
         case x of
           Left (Failure loc err mdiff) -> do
             let
@@ -179,13 +176,12 @@ skipToShrink (ShrinkPath shrinkPath) updateUI =
             return OK
 
     loop shrinks (s0:ss) = \case
-      NodeT _ xs ->
+      Tree _ xs ->
         case drop s0 xs of
           [] ->
             pure GaveUp
           (x:_) -> do
-            let o = runTree x
-            loop (shrinks + 1) ss o
+            loop (shrinks + 1) ss x
   in
     maybe (pure GaveUp) (loop 0 shrinkPath)
 
@@ -323,7 +319,7 @@ checkReport cfg size0 seed0 test updateUI = do
                 loop tests (discards + 1) (size + 1) s1 coverage0
             (Just _, Just shrinkPath) -> do
               let
-                node = fmap runTree . runGen size s0 . runTest $ test
+                node = runGen size s0 . runTest $ test
               let
                 mkReport =
                   Report (tests + 1) discards coverage0 seed0
@@ -331,12 +327,12 @@ checkReport cfg size0 seed0 test updateUI = do
             _ -> do
               let
                 node =
-                  fmap runTree . runGen size s0 . runTest $ test
+                  runGen size s0 . runTest $ test
               case node of
                 Nothing ->
                   loop tests (discards + 1) (size + 1) s1 coverage0
 
-                Just (NodeT (Left _, _) _) ->
+                Just (Tree (Left _, _) _) ->
                   let
                     mkReport =
                       Report (tests + 1) discards coverage0 seed0
@@ -350,7 +346,7 @@ checkReport cfg size0 seed0 test updateUI = do
                         (updateUI . mkReport)
                         node
 
-                Just (NodeT (Right (), journal) _) ->
+                Just (Tree (Right (), journal) _) ->
                   let
                     coverage =
                       journalCoverage journal <> coverage0

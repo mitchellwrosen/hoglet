@@ -164,7 +164,7 @@ import qualified Hedgehog.Internal.Range as Range
 import           Hedgehog.Internal.Seed (Seed)
 import qualified Hedgehog.Internal.Seed as Seed
 import qualified Hedgehog.Internal.Shrink as Shrink
-import           Hedgehog.Internal.Tree (Tree, NodeT(..))
+import           Hedgehog.Internal.Tree (Tree(Tree))
 import qualified Hedgehog.Internal.Tree as Tree
 
 import           Prelude hiding (either, filter, map, maybe, print, seq)
@@ -398,14 +398,13 @@ integral range =
       Range.origin range
 
     binarySearchTree bottom top =
-      Tree.Tree $
-        let
-          shrinks =
-            Shrink.towards bottom top
-          children =
-            zipWith binarySearchTree shrinks (drop 1 shrinks)
-        in
-          Tree.NodeT top children
+      let
+        shrinks =
+          Shrink.towards bottom top
+        children =
+          zipWith binarySearchTree shrinks (drop 1 shrinks)
+      in
+        Tree top children
 
     createTree root =
       if root == origin_ then
@@ -991,7 +990,7 @@ list :: forall a. Range Int -> Gen a -> Gen [a]
 list range gen =
   let
      interleave :: Tree [Maybe (Tree a)] -> Tree [a]
-     interleave = Tree.fromNodeT . Tree.interleaveTreeT . Maybe.catMaybes . nodeValue . Tree.runTree
+     interleave = Tree.interleave . Maybe.catMaybes . Tree.treeValue
   in
     sized $ \size ->
       ensure (atLeast $ Range.lowerBound size range) .
@@ -1111,8 +1110,8 @@ deriving instance Traversable (Vec n)
 freeze :: Gen a -> Gen (a, Gen a)
 freeze gen =
   Gen $ \size seed -> do
-    Tree.Tree (Tree.Node x xs) <- runGen size seed gen
-    Just (Tree.singleton (x, fromTreeMaybeT . Just . Tree.fromNodeT $ NodeT x xs))
+    Tree.Tree x xs <- runGen size seed gen
+    Just (Tree.singleton (x, fromTreeMaybeT . Just $ Tree x xs))
 
 shrinkSubterms :: Subterms n a -> [Subterms n a]
 shrinkSubterms = \case
@@ -1345,21 +1344,13 @@ printWith size seed gen =
         putStrLn "=== Outcome ==="
         putStrLn "<discard>"
 
-      Just tree_ -> do
-        let
-          NodeT x ss =
-            Tree.runTree tree_
-
+      Just (Tree x ss) -> do
         putStrLn "=== Outcome ==="
         putStrLn (show x)
         putStrLn "=== Shrinks ==="
 
         for_ ss $ \s ->
-          let
-            NodeT y _ =
-              Tree.runTree s
-          in
-            putStrLn (show y)
+          putStrLn (show (Tree.treeValue s))
 
 -- | Run a generator with a random seed and print the resulting shrink tree.
 --

@@ -1,7 +1,9 @@
 {-# OPTIONS_HADDOCK not-home #-}
 {-# LANGUAGE CPP #-}
 {-# LANGUAGE ConstraintKinds #-}
+{-# LANGUAGE DeriveFoldable #-}
 {-# LANGUAGE DeriveFunctor #-}
+{-# LANGUAGE DeriveTraversable #-}
 {-# LANGUAGE DerivingStrategies #-}
 {-# LANGUAGE DoAndIfThenElse #-}
 {-# LANGUAGE FlexibleContexts #-}
@@ -18,16 +20,12 @@ module Hedgehog.Internal.Tree (
   , zipTreeT
   , treeValue
 
-  , NodeT(..)
-  , pattern Node
-  , fromNodeT
-
   , expand
   , prune
 
   , consChild
   , mapMaybeT
-  , interleaveTreeT
+  , interleave
 
   , render
   ) where
@@ -36,9 +34,8 @@ module Hedgehog.Internal.Tree (
 import           Control.Applicative (liftA2)
 #endif
 
-import           Data.Functor.Identity (Identity(..))
 import           Data.Functor.Classes (Show1(..), showsPrec1)
-import           Data.Functor.Classes (showsUnaryWith, showsBinaryWith)
+import           Data.Functor.Classes (showsBinaryWith)
 import qualified Data.List as List
 
 import           Prelude hiding (filter)
@@ -47,57 +44,27 @@ import           Prelude hiding (filter)
 
 -- | A rose tree.
 --
-newtype Tree a =
-  Tree {
-      runTree :: NodeT Identity a
-    }
-  deriving stock (Eq, Functor)
+data Tree a =
+  Tree a [Tree a]
+  deriving stock (Eq, Foldable, Functor, Traversable)
 
--- | A node in a rose tree.
---
-type Node =
-  NodeT Identity
-{-# COMPLETE Node #-}
+treeValue :: Tree a -> a
+treeValue (Tree value _) =
+  value
 
--- | Pattern to ease construction / deconstruction of pure nodes.
---
-pattern Node :: a -> [Tree a] -> Node a
-pattern Node x xs =
-  NodeT x xs
-
--- | A node in an effectful tree, as well as its unevaluated children.
---
-data NodeT m a =
-  NodeT {
-      -- | The value at this 'NodeT' in the 'TreeT'.
-      nodeValue :: a
-
-      -- | The children of this 'NodeT'.
-    , nodeChildren :: [Tree a]
-    } deriving (Eq)
-
--- | Create a 'TreeT' from a 'NodeT'
---
-fromNodeT :: NodeT Identity a -> Tree a
-fromNodeT =
-  Tree
+treeChildren :: Tree a -> [Tree a]
+treeChildren (Tree _ children) =
+  children
 
 singleton :: a -> Tree a
 singleton =
   pure
 
--- | The value at the root of the 'Tree'.
---
-treeValue :: Tree a -> a
-treeValue =
-  nodeValue . runTree
-
 -- | Create a tree from a value and an unfolding function.
 --
 unfold :: (a -> [a]) -> a -> Tree a
 unfold f x =
-  Tree $
-    NodeT x (unfoldForest f x)
+  Tree x (unfoldForest f x)
 
 -- | Create a forest from a value and an unfolding function.
 --
@@ -108,33 +75,34 @@ unfoldForest f =
 -- | Expand a tree using an unfolding function.
 --
 expand :: (a -> [a]) -> Tree a -> Tree a
-expand f (Tree (Node x xs)) =
-  Tree (Node x (map (expand f) xs ++ unfoldForest f x))
+expand f (Tree x xs) =
+  Tree x (map (expand f) xs ++ unfoldForest f x)
 
 -- | Throw away all but the top @n@ levels of a tree's children.
 --
 --   /@prune 0@ will throw away all of a tree's children./
 --
 prune :: Int -> Tree a -> Tree a
-prune n (Tree (Node x xs)) =
+prune n (Tree x xs) =
   if n <= 0 then
-    fromNodeT (Node x [])
+    Tree x []
   else
-    fromNodeT (Node x (map (prune (n - 1)) xs))
+    Tree x (map (prune (n - 1)) xs)
 
 mapMaybeT :: (a -> Maybe b) -> Tree a -> Maybe (Tree b)
-mapMaybeT p (Tree (Node x xs)) =
-  (\y -> fromNodeT (Node y (flattenTrees p xs))) <$> p x
+mapMaybeT p (Tree x xs) = do
+  y <- p x
+  Just (Tree y (flattenTrees p xs))
 
 flattenTree :: (a -> Maybe b) -> Tree a -> [Tree b]
-flattenTree p (Tree (Node x ys0)) =
+flattenTree p (Tree x ys0) =
   let
     ys =
       flattenTrees p ys0
   in
     case p x of
       Just x' ->
-        [Tree (Node x' ys)]
+        [Tree x' ys]
       Nothing ->
         ys
 
@@ -144,10 +112,8 @@ flattenTrees =
   flattenTree
 
 consChild :: a -> Tree a -> Tree a
-consChild a m =
-  Tree $
-    let NodeT x xs = runTree m
-    in NodeT x $ singleton a : xs
+consChild a (Tree x xs) =
+  Tree x (singleton a : xs)
 
 ------------------------------------------------------------------------
 
@@ -189,131 +155,63 @@ removes k = \xs -> go xs
       where
         (xs1, xs2) = splitAt k xs
 
-dropSome :: [NodeT Identity a] -> [Tree [a]]
+dropSome :: [Tree a] -> [Tree [a]]
 dropSome ts = do
   n   <- takeWhile (> 0) $ iterate (`div` 2) (length ts)
   ts' <- removes n ts
-  [fromNodeT $ interleave ts']
+  [interleave ts']
 
-shrinkOne :: [NodeT Identity a] -> [Tree [a]]
+shrinkOne :: [Tree a] -> [Tree [a]]
 shrinkOne ts = do
   (xs, y0, zs) <- splits ts
-  y1 <- nodeChildren y0
-  [fromNodeT $ interleave (xs ++ [runTree y1] ++ zs)]
+  y1 <- treeChildren y0
+  [interleave (xs ++ [y1] ++ zs)]
 
-interleave :: [NodeT Identity a] -> NodeT Identity [a]
+interleave :: [Tree a] -> Tree [a]
 interleave ts =
-  NodeT (fmap nodeValue ts) $
+  Tree (fmap treeValue ts) $
     concat [
         dropSome ts
       , shrinkOne ts
       ]
 
-interleaveTreeT :: [Tree a] -> NodeT Identity [a]
-interleaveTreeT =
-  interleave . map runTree
-
-------------------------------------------------------------------------
-
-instance Foldable Tree where
-  foldMap f (Tree mx) =
-    foldMap f mx
-
-instance Foldable Node where
-  foldMap f (NodeT x xs) =
-    f x `mappend` mconcat (fmap (foldMap f) xs)
-
-instance Traversable Tree where
-  traverse f (Tree mx) =
-    Tree <$> traverse f mx
-
-instance Traversable Node where
-  traverse f (NodeT x xs) =
-    NodeT <$> f x <*> traverse (traverse f) xs
-
 ------------------------------------------------------------------------
 -- NodeT/TreeT instances
 
-instance Functor m => Functor (NodeT m) where
-  fmap f (NodeT x xs) =
-    NodeT (f x) (fmap (fmap f) xs)
-
-instance Applicative (NodeT Identity) where
-  pure x =
-    NodeT x []
-  (<*>) (NodeT ab tabs) na@(NodeT a tas) =
-    NodeT (ab a) $
-      map (<*> (fromNodeT na)) tabs ++ map (fmap ab) tas
-
 instance Applicative Tree where
-  pure =
-    Tree . pure
-  (<*>) (Tree mab) (Tree ma) =
-    Tree $
-      (<*>) mab ma
-
-instance Monad (NodeT Identity) where
-  return =
-    pure
-
-  (>>=) (NodeT x xs) k =
-    case k x of
-      NodeT y ys ->
-        NodeT y $
-          map (Tree . (>>= k) . runTree) xs ++ ys
+  pure x =
+    Tree x []
+  (<*>) (Tree ab tabs) na@(Tree a tas) =
+    Tree (ab a) $
+      map (<*> na) tabs ++ map (fmap ab) tas
 
 instance Monad Tree where
   return =
     pure
 
-  (>>=) m k =
-    Tree $ do
-      let NodeT x xs = runTree m
-      let NodeT y ys = runTree (k x)
-      NodeT y $
-        map (>>= k) xs ++ ys
+  (>>=) (Tree x xs) k =
+    case k x of
+      Tree y ys ->
+        Tree y $
+          map (>>= k) xs ++ ys
 
 zipTreeT :: forall a b. Tree a -> Tree b -> Tree (a, b)
-zipTreeT l0@(Tree left) r0@(Tree right) =
-  Tree $
-    let
-      zipNodeT :: NodeT Identity a -> NodeT Identity b -> NodeT Identity (a, b)
-      zipNodeT (NodeT a ls) (NodeT b rs) =
-          NodeT (a, b) $
-            concat [
-                [zipTreeT l1 r0 | l1 <- ls]
-              , [zipTreeT l0 r1 | r1 <- rs]
-              ]
-    in
-      zipNodeT left right
+zipTreeT l0@(Tree a ls) r0@(Tree b rs) =
+  Tree (a, b) $
+    concat [
+        [zipTreeT l1 r0 | l1 <- ls]
+      , [zipTreeT l0 r1 | r1 <- rs]
+      ]
 
 ------------------------------------------------------------------------
 -- Show/Show1 instances
-
-instance (Show1 m, Show a) => Show (NodeT m a) where
-  showsPrec =
-    showsPrec1
 
 instance (Show a) => Show (Tree a) where
   showsPrec =
     showsPrec1
 
-instance Show1 m => Show1 (NodeT m) where
-  liftShowsPrec sp sl d (NodeT x xs) =
-    let
-      sp1 =
-        liftShowsPrec sp sl
-
-      sl1 =
-        liftShowList sp sl
-
-      sp2 =
-        liftShowsPrec sp1 sl1
-    in
-      showsBinaryWith sp sp2 "NodeT" d x xs
-
 instance Show1 Tree where
-  liftShowsPrec sp sl d (Tree m) =
+  liftShowsPrec sp sl d (Tree x xs) =
     let
       sp1 =
         liftShowsPrec sp sl
@@ -324,7 +222,7 @@ instance Show1 Tree where
       sp2 =
         liftShowsPrec sp1 sl1
     in
-      showsUnaryWith sp2 "TreeT" d (Identity m)
+      showsBinaryWith sp sp2 "Tree" d x xs
 
 ------------------------------------------------------------------------
 -- Pretty Printing
@@ -334,7 +232,7 @@ instance Show1 Tree where
 --
 
 renderTreeTLines :: Tree String -> [String]
-renderTreeTLines (Tree (Node x xs0)) = do
+renderTreeTLines (Tree x xs0) = do
   lines (renderNodeT x) ++ renderForestLines xs0
 
 renderNodeT :: String -> String
