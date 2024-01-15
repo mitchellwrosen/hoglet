@@ -23,7 +23,6 @@ module Hedgehog.Internal.Tree (
   , expand
   , prune
 
-  , catMaybes
   , runTreeMaybeT
   , mapMaybeMaybeT
   , consChild
@@ -155,48 +154,15 @@ prune n m =
       Just . NodeT x $
         fmap (prune (n - 1)) xs0
 
--- | Takes a tree of 'Maybe's and returns a tree of all the 'Just' values.
---
---   If there are no 'Just' values then 'Nothing' is returned.
---
-catMaybes :: Tree (Maybe a) -> Maybe (Tree a)
-catMaybes m =
-  let
-    NodeT mx mxs =
-      runTree m
-  in
-    case mx of
-      Nothing -> do
-        case Maybe.mapMaybe catMaybes mxs of
-          [] ->
-            Nothing
-          Tree (NodeT x xs0) : xs1 ->
-            Just . Tree $
-              Node x (xs0 ++ xs1)
-      Just x ->
-        Just . Tree $
-          Node x (Maybe.mapMaybe catMaybes mxs)
-
--- | Run the discard effects through the tree and reify them as 'Maybe' values
---   at the nodes.
---
---   'Nothing' means discarded, 'Just' means we have a value.
---
-runTreeMaybeT :: TreeT Maybe a -> Tree (Maybe a)
+runTreeMaybeT :: TreeT Maybe a -> Maybe (Tree a)
 runTreeMaybeT tree =
   case runTreeT tree of
-    Nothing -> singleton Nothing
-    Just (NodeT root children) -> fromNodeT (NodeT (Just root) (map runTreeMaybeT children))
-
-runTreeMaybeT2 :: TreeT Maybe a -> Maybe (Tree a)
-runTreeMaybeT2 tree =
-  case runTreeT tree of
     Nothing -> Nothing
-    Just (NodeT root children) -> Just (fromNodeT (NodeT root (Maybe.mapMaybe runTreeMaybeT2 children)))
+    Just (NodeT root children) -> Just (fromNodeT (NodeT root (Maybe.mapMaybe runTreeMaybeT children)))
 
 mapMaybeMaybeT :: (a -> Maybe b) -> TreeT Maybe a -> TreeT Maybe b
 mapMaybeMaybeT p t =
-  case runTreeMaybeT2 t of
+  case runTreeMaybeT t of
     Nothing ->
       TreeT Nothing
     Just (Tree (Node x xs)) ->

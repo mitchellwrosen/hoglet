@@ -28,7 +28,7 @@ import           Data.Maybe (isJust)
 import           Data.Text (Text)
 
 import           Hedgehog.Internal.Config
-import           Hedgehog.Internal.Gen (evalGenT)
+import           Hedgehog.Internal.Gen (evalGen)
 import           Hedgehog.Internal.Property (DiscardCount(..), ShrinkCount(..))
 import           Hedgehog.Internal.Property (Group(..), GroupName(..))
 import           Hedgehog.Internal.Property (Journal(..), Coverage(..), CoverCount(..))
@@ -87,22 +87,22 @@ findM xs0 def p =
           Just x ->
             return x
 
-isFailure :: NodeT m (Maybe (Either x a, b)) -> Bool
+isFailure :: NodeT m (Either x a, b) -> Bool
 isFailure = \case
-  NodeT (Just (Left _, _)) _ ->
+  NodeT (Left _, _) _ ->
     True
   _ ->
     False
 
-isSuccess :: NodeT m (Maybe (Either x a, b)) -> Bool
+isSuccess :: NodeT m (Either x a, b) -> Bool
 isSuccess =
   not . isFailure
 
 runTreeN ::
      Monad m
   => ShrinkRetries
-  -> TreeT m (Maybe (Either x a, b))
-  -> m (NodeT m (Maybe (Either x a, b)))
+  -> TreeT m (Either x a, b)
+  -> m (NodeT m (Either x a, b))
 runTreeN n m = do
   o <- runTreeT m
   if n > 0 && isSuccess o then
@@ -117,15 +117,12 @@ takeSmallest ::
   -> ShrinkLimit
   -> ShrinkRetries
   -> (Progress -> m ())
-  -> NodeT Identity (Maybe (Either Failure (), Journal))
+  -> Maybe (NodeT Identity (Either Failure (), Journal))
   -> m Result
 takeSmallest shrinks0 (ShrinkPath shrinkPath0) slimit retries updateUI =
   let
     loop shrinks revShrinkPath = \case
-      NodeT Nothing _ ->
-        pure GaveUp
-
-      NodeT (Just (x, (Journal logs))) xs ->
+      NodeT (x, (Journal logs)) xs ->
         case x of
           Left (Failure loc err mdiff) -> do
             let
@@ -150,7 +147,7 @@ takeSmallest shrinks0 (ShrinkPath shrinkPath0) slimit retries updateUI =
           Right () ->
             return OK
   in
-    loop shrinks0 (reverse shrinkPath0)
+    maybe (pure GaveUp) (loop shrinks0 (reverse shrinkPath0))
 
 -- | Follow a given shrink path, instead of searching exhaustively. Assume that
 -- the end of the path is minimal, and don't try to shrink any further than
@@ -163,15 +160,12 @@ skipToShrink ::
      MonadIO m
   => ShrinkPath
   -> (Progress -> m ())
-  -> NodeT Identity (Maybe (Either Failure (), Journal))
+  -> Maybe (NodeT Identity (Either Failure (), Journal))
   -> m Result
 skipToShrink (ShrinkPath shrinkPath) updateUI =
   let
     loop shrinks [] = \case
-      NodeT Nothing _ ->
-        pure GaveUp
-
-      NodeT (Just (x, (Journal logs))) _ ->
+      NodeT (x, (Journal logs)) _ ->
         case x of
           Left (Failure loc err mdiff) -> do
             let
@@ -193,7 +187,7 @@ skipToShrink (ShrinkPath shrinkPath) updateUI =
             let o = runIdentity (runTreeT x)
             loop (shrinks + 1) ss o
   in
-    loop 0 shrinkPath
+    maybe (pure GaveUp) (loop 0 shrinkPath)
 
 checkReport ::
      PropertyConfig
@@ -329,20 +323,20 @@ checkReport cfg size0 seed0 test updateUI = do
                 loop tests (discards + 1) (size + 1) s1 coverage0
             (Just _, Just shrinkPath) -> do
               let
-                node = runIdentity . runTreeT . evalGenT size s0 . runTest $ test
+                node = fmap (runIdentity . runTreeT) . evalGen size s0 . runTest $ test
               let
                 mkReport =
                   Report (tests + 1) discards coverage0 seed0
               mkReport <$> skipToShrink shrinkPath (updateUI . mkReport) node
             _ -> do
               let
-                node@(NodeT x _) =
-                  runIdentity . runTreeT . evalGenT size s0 . runTest $ test
-              case x of
+                node =
+                  fmap (runIdentity . runTreeT) . evalGen size s0 . runTest $ test
+              case node of
                 Nothing ->
                   loop tests (discards + 1) (size + 1) s1 coverage0
 
-                Just (Left _, _) ->
+                Just (NodeT (Left _, _) _) ->
                   let
                     mkReport =
                       Report (tests + 1) discards coverage0 seed0
@@ -356,7 +350,7 @@ checkReport cfg size0 seed0 test updateUI = do
                         (updateUI . mkReport)
                         node
 
-                Just (Right (), journal) ->
+                Just (NodeT (Right (), journal) _) ->
                   let
                     coverage =
                       journalCoverage journal <> coverage0

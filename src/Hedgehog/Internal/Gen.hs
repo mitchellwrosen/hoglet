@@ -24,6 +24,7 @@
 module Hedgehog.Internal.Gen (
   -- * Transformer
     Gen
+  , evalGen
 
   -- ** Shrinking
   , shrink
@@ -131,9 +132,6 @@ module Hedgehog.Internal.Gen (
   , printTree
   , printWith
   , printTreeWith
-
-  -- ** Transfomer
-  , evalGenT
   ) where
 
 #if !MIN_VERSION_base(4,18,0)
@@ -198,13 +196,6 @@ runGen size seed (Gen m) =
 --
 evalGen :: Size -> Seed -> Gen a -> Maybe (Tree a)
 evalGen size seed =
-  Tree.catMaybes .
-  evalGenT size seed
-
--- | Runs a generator, producing its shrink tree.
---
-evalGenT :: Size -> Seed -> Gen a -> Tree (Maybe a)
-evalGenT size seed =
   Tree.runTreeMaybeT .
   runGen size seed
 
