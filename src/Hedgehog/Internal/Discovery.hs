@@ -2,12 +2,8 @@
 {-# LANGUAGE DeriveFunctor #-}
 {-# LANGUAGE LambdaCase #-}
 {-# LANGUAGE ScopedTypeVariables #-}
-{-# LANGUAGE CPP #-}
 module Hedgehog.Internal.Discovery (
-    PropertySource(..)
-  , readProperties
-  , findProperties
-  , readDeclaration
+    readDeclaration
 
   , Pos(..)
   , Position(..)
@@ -21,22 +17,11 @@ import qualified Data.List as List
 import           Data.Map (Map)
 import qualified Data.Map as Map
 import qualified Data.Ord as Ord
-import           Data.Text (Text)
-import qualified Data.Text as Text
 
 import           Hedgehog.Internal.Source (LineNo(..), ColumnNo(..))
 
 ------------------------------------------------------------------------
 -- Property Extraction
-
-newtype PropertySource =
-  PropertySource {
-      propertySource :: Pos String
-    } deriving (Eq, Ord, Show)
-
-readProperties :: MonadIO m => String -> FilePath -> m (Map Text PropertySource)
-readProperties prefix path =
-  findProperties prefix path <$> liftIO (readFile path)
 
 readDeclaration :: MonadIO m => FilePath -> LineNo -> m (Maybe (String, Pos String))
 readDeclaration path line = do
@@ -59,13 +44,6 @@ takeHead = \case
     Nothing
   x : _ ->
     Just x
-
-findProperties :: String -> FilePath -> String -> Map Text PropertySource
-findProperties prefix path =
-  Map.map PropertySource .
-  Map.mapKeysMonotonic Text.pack .
-  Map.filterWithKey (\k _ -> List.isPrefixOf prefix k) .
-  findDeclarations path
 
 findDeclarations :: FilePath -> String -> Map String (Pos String)
 findDeclarations path =
