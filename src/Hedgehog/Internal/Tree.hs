@@ -24,7 +24,6 @@ module Hedgehog.Internal.Tree (
   , prune
 
   , mapMaybe
-  , runTreeMaybe
   , runTreeMaybeT
   , mapMaybeMaybeT
   , consChild
@@ -38,10 +37,7 @@ module Hedgehog.Internal.Tree (
 import           Control.Applicative (liftA2)
 #endif
 import           Control.Applicative (Alternative(..))
-import           Control.Exception.Safe (Exception)
 import           Control.Monad (MonadPlus(..), join)
-import           Control.Monad.Catch (MonadThrow(throwM), MonadCatch(catch))
-import           Control.Monad.IO.Class (MonadIO(..))
 import           Control.Monad.Morph (MFunctor(..), generalize)
 import           Control.Monad.Trans.Class (MonadTrans(..))
 import           Control.Monad.Trans.Maybe (MaybeT(..))
@@ -184,19 +180,6 @@ mapMaybe p =
   runTreeMaybeT2 .
   mapMaybeMaybeT p .
   hoist (Just . runIdentity)
-
--- | Lazily run the discard effects through the tree and reify it a
---   @Maybe (Tree a)@.
---
---   'Nothing' means discarded, 'Just' means we have a value.
---
---   Discards in the child nodes of the tree are simply removed.
---
-runTreeMaybe :: TreeT Maybe a -> Maybe (Tree a)
-runTreeMaybe =
-  mapMaybe id .
-  runTreeMaybeT .
-  hoist (MaybeT . pure)
 
 -- | Run the discard effects through the tree and reify them as 'Maybe' values
 --   at the nodes.
@@ -438,28 +421,6 @@ distributeNodeT (NodeT x xs) =
 distributeTreeT :: (Monad m, MonadTrans t, MFunctor t) => TreeT (t m) a -> t (TreeT m) a
 distributeTreeT x =
   distributeNodeT =<< hoist lift (runTreeT x)
-
-instance MonadIO m => MonadIO (TreeT m) where
-  liftIO =
-    lift . liftIO
-
-instance MonadThrow m => MonadThrow (TreeT m) where
-  throwM =
-    lift . throwM
-
-handleNodeT :: (Exception e, MonadCatch m) => (e -> TreeT m a) -> NodeT m a -> NodeT m a
-handleNodeT onErr (NodeT x xs) =
-  NodeT x $
-    fmap (handleTreeT onErr) xs
-
-handleTreeT :: (Exception e, MonadCatch m) => (e -> TreeT m a) -> TreeT m a -> TreeT m a
-handleTreeT onErr m =
-  TreeT . fmap (handleNodeT onErr) $
-    catch (runTreeT m) (runTreeT . onErr)
-
-instance MonadCatch m => MonadCatch (TreeT m) where
-  catch =
-    flip handleTreeT
 
 ------------------------------------------------------------------------
 -- Show/Show1 instances
