@@ -20,13 +20,12 @@ module Hedgehog.Internal.Tree (
   , treeValue
 
   , NodeT(..)
+  , pattern Node
   , fromNodeT
 
   , expand
   , prune
 
-  , runTreeMaybeT
-  , unRunTreeMaybeT
   , consChild
   , mapMaybeT
   , interleaveTreeT
@@ -46,7 +45,6 @@ import           Data.Functor.Classes (Eq1(..))
 import           Data.Functor.Classes (Show1(..), showsPrec1)
 import           Data.Functor.Classes (showsUnaryWith, showsBinaryWith)
 import qualified Data.List as List
-import qualified Data.Maybe as Maybe
 
 import           Prelude hiding (filter)
 
@@ -146,17 +144,6 @@ prune n (Tree (Node x xs)) =
     fromNodeT (Node x [])
   else
     fromNodeT (Node x (map (prune (n - 1)) xs))
-
-runTreeMaybeT :: TreeT Maybe a -> Maybe (Tree a)
-runTreeMaybeT tree =
-  case runTreeT tree of
-    Nothing -> Nothing
-    Just (NodeT root children) -> Just (fromNodeT (NodeT root (Maybe.mapMaybe runTreeMaybeT children)))
-
-unRunTreeMaybeT :: Maybe (Tree a) -> TreeT Maybe a
-unRunTreeMaybeT = \case
-  Nothing -> TreeT Nothing
-  Just tree -> hoist (Just . runIdentity) tree
 
 mapMaybeT :: (a -> Maybe b) -> Tree a -> Maybe (Tree b)
 mapMaybeT p (Tree (Node x xs)) =
@@ -325,11 +312,11 @@ instance Alternative m => Alternative (TreeT m) where
   (<|>) x y =
     TreeT (runTreeT x <|> runTreeT y)
 
-zipTreeT :: forall a b. TreeT Maybe a -> TreeT Maybe b -> TreeT Maybe (a, b)
+zipTreeT :: forall a b. Tree a -> Tree b -> Tree (a, b)
 zipTreeT l0@(TreeT left) r0@(TreeT right) =
   TreeT $
     let
-      zipNodeT :: NodeT Maybe a -> NodeT Maybe b -> NodeT Maybe (a, b)
+      zipNodeT :: NodeT Identity a -> NodeT Identity b -> NodeT Identity (a, b)
       zipNodeT (NodeT a ls) (NodeT b rs) =
           NodeT (a, b) $
             concat [

@@ -24,7 +24,7 @@
 module Hedgehog.Internal.Gen (
   -- * Transformer
     Gen
-  , evalGen
+  , runGen
 
   -- ** Shrinking
   , shrink
@@ -135,17 +135,14 @@ module Hedgehog.Internal.Gen (
 import           Control.Applicative (liftA2)
 #endif
 import           Control.Applicative (Alternative(..))
-import           Control.Monad (filterM, guard, replicateM)
+import           Control.Monad (filterM, guard, join, replicateM)
 import           Control.Monad.IO.Class (MonadIO(..))
-import           Control.Monad.Morph (MFunctor(..))
-import qualified Control.Monad.Morph as Morph
 
 import           Data.Bifunctor (first)
 import           Data.ByteString (ByteString)
 import qualified Data.ByteString as ByteString
 import qualified Data.Char as Char
 import           Data.Foldable (for_, toList)
-import           Data.Functor.Identity (Identity(..))
 import           Data.Int (Int8, Int16, Int32, Int64)
 import           Data.List.NonEmpty (NonEmpty)
 import qualified Data.List.NonEmpty as NonEmpty
@@ -167,7 +164,7 @@ import qualified Hedgehog.Internal.Range as Range
 import           Hedgehog.Internal.Seed (Seed)
 import qualified Hedgehog.Internal.Seed as Seed
 import qualified Hedgehog.Internal.Shrink as Shrink
-import           Hedgehog.Internal.Tree (Tree, TreeT(..), NodeT(..))
+import           Hedgehog.Internal.Tree (Tree, NodeT(..))
 import qualified Hedgehog.Internal.Tree as Tree
 
 import           Prelude hiding (either, filter, map, maybe, print, seq)
@@ -179,45 +176,29 @@ import           Prelude hiding (either, filter, map, maybe, print, seq)
 -- | Generator for random values of @a@.
 --
 newtype Gen a =
-  Gen (Size -> Seed -> TreeT Maybe a)
+  Gen (Size -> Seed -> Maybe (Tree a))
+  deriving stock (Functor)
 
 -- | Runs a generator, producing its shrink tree.
 --
-runGen :: Size -> Seed -> Gen a -> TreeT Maybe a
+runGen :: Size -> Seed -> Gen a -> Maybe (Tree a)
 runGen size seed (Gen m) =
   m size seed
-
--- | Run a generator, producing its shrink tree.
---
---   'Nothing' means discarded, 'Just' means we have a value.
---
-evalGen :: Size -> Seed -> Gen a -> Maybe (Tree a)
-evalGen size seed =
-  Tree.runTreeMaybeT .
-  runGen size seed
 
 -- | Map over a generator's shrink tree.
 --
 mapGen :: (Maybe (Tree a) -> Maybe (Tree b)) -> Gen a -> Gen b
 mapGen f gen =
   Gen $ \size seed ->
-    Tree.unRunTreeMaybeT (f (evalGen size seed gen))
+    f (runGen size seed gen)
 
 -- | Lift a predefined shrink tree in to a generator, ignoring the seed and the
 --   size.
 --
-fromTreeMaybeT :: TreeT Maybe a -> Gen a
+fromTreeMaybeT :: Maybe (Tree a) -> Gen a
 fromTreeMaybeT x =
   Gen $ \_ _ ->
     x
-
--- | Lift a predefined shrink tree in to a generator, ignoring the seed and the
---   size.
---
-fromTreeMaybeT2 :: Maybe (Tree a) -> Gen a
-fromTreeMaybeT2 x =
-  Gen $ \_ _ ->
-    Tree.unRunTreeMaybeT x
 
 -- | Lift a predefined shrink tree in to a generator, ignoring the seed and the
 --   size.
@@ -246,25 +227,20 @@ instance (
   mempty =
     return mempty
 
-instance Functor Gen where
-  fmap f gen =
-    Gen $ \seed size ->
-      fmap f (runGen seed size gen)
-
 --
 -- implementation: parallel shrinking
 --
 instance Applicative Gen where
   pure =
-    fromTreeMaybeT2 . Just . pure
+    fromTreeMaybeT . Just . pure
 
   (<*>) f m =
     Gen $ \size seed ->
       case Seed.split seed of
         (sf, sm) ->
-          uncurry ($) <$>
-            runGen size sf f `Tree.zipTreeT`
-            runGen size sm m
+          (\tf tx -> uncurry ($) <$> Tree.zipTreeT tf tx)
+            <$> runGen size sf f
+            <*> runGen size sm m
 
 --
 -- implementation: satisfies law (ap = <*>)
@@ -284,11 +260,10 @@ instance Monad Gen where
     pure
 
   (>>=) m k =
-    Gen $ \size seed ->
-      case Seed.split seed of
-        (sk, sm) ->
-          runGen size sk . k =<<
-          runGen size sm m
+    Gen $ \size seed -> do
+      let (sk, sm) = Seed.split seed
+      ta <- runGen size sm m
+      fmap join (Tree.mapMaybeT (runGen size sk . k) ta)
 
 instance MonadFail Gen where
   fail =
@@ -313,7 +288,7 @@ instance Alternative Gen where
 generate :: (Size -> Seed -> a) -> Gen a
 generate f =
   Gen $ \size seed ->
-    pure (f size seed)
+    Just (Tree.singleton (f size seed))
 
 ------------------------------------------------------------------------
 -- Combinators - Shrinking
@@ -434,15 +409,14 @@ integral range =
 
     createTree root =
       if root == origin_ then
-        pure root
+        Tree.singleton root
       else
-        hoist Morph.generalize $
-          Tree.consChild origin_ $
-            binarySearchTree origin_ root
+        Tree.consChild origin_ $
+          binarySearchTree origin_ root
 
   in
     Gen $ \size seed ->
-      createTree $ integralHelper range size seed
+      Just $ createTree $ integralHelper range size seed
 
 -- | Generates a random integral number in the [inclusive,inclusive] range.
 --
@@ -1136,12 +1110,9 @@ deriving instance Traversable (Vec n)
 --
 freeze :: Gen a -> Gen (a, Gen a)
 freeze gen =
-  Gen $ \size seed ->
-    case runTreeT (runGen size seed gen) of
-      Nothing ->
-        empty
-      Just (NodeT x xs) ->
-        pure (x, fromTreeMaybeT . Tree.fromNodeT $ NodeT x xs)
+  Gen $ \size seed -> do
+    Tree.Tree (Tree.Node x xs) <- runGen size seed gen
+    Just (Tree.singleton (x, fromTreeMaybeT . Just . Tree.fromNodeT $ NodeT x xs))
 
 shrinkSubterms :: Subterms n a -> [Subterms n a]
 shrinkSubterms = \case
@@ -1334,7 +1305,7 @@ sample gen =
           error "Hedgehog.Gen.sample: too many discards, could not generate a sample"
         else do
           seed <- Seed.random
-          case evalGen 30 seed gen of
+          case runGen 30 seed gen of
             Nothing ->
               loop (n - 1)
             Just x ->
@@ -1369,7 +1340,7 @@ print gen = do
 printWith :: (MonadIO m, Show a) => Size -> Seed -> Gen a -> m ()
 printWith size seed gen =
   liftIO $ do
-    case evalGen size seed gen of
+    case runGen size seed gen of
       Nothing -> do
         putStrLn "=== Outcome ==="
         putStrLn "<discard>"
@@ -1377,7 +1348,7 @@ printWith size seed gen =
       Just tree_ -> do
         let
           NodeT x ss =
-            runIdentity (runTreeT tree_)
+            Tree.runTree tree_
 
         putStrLn "=== Outcome ==="
         putStrLn (show x)
@@ -1386,7 +1357,7 @@ printWith size seed gen =
         for_ ss $ \s ->
           let
             NodeT y _ =
-              runIdentity $ runTreeT s
+              Tree.runTree s
           in
             putStrLn (show y)
 
@@ -1427,7 +1398,7 @@ printTreeWith size seed gen = do
 --
 renderTree :: Show a => Size -> Seed -> Gen a -> String
 renderTree size seed gen =
-  case evalGen size seed gen of
+  case runGen size seed gen of
     Nothing ->
       "<discard>"
     Just x ->

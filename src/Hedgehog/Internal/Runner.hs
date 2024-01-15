@@ -28,7 +28,7 @@ import           Data.Maybe (isJust)
 import           Data.Text (Text)
 
 import           Hedgehog.Internal.Config
-import           Hedgehog.Internal.Gen (evalGen)
+import           Hedgehog.Internal.Gen (runGen)
 import           Hedgehog.Internal.Property (DiscardCount(..), ShrinkCount(..))
 import           Hedgehog.Internal.Property (Group(..), GroupName(..))
 import           Hedgehog.Internal.Property (Journal(..), Coverage(..), CoverCount(..))
@@ -323,7 +323,7 @@ checkReport cfg size0 seed0 test updateUI = do
                 loop tests (discards + 1) (size + 1) s1 coverage0
             (Just _, Just shrinkPath) -> do
               let
-                node = fmap (runIdentity . runTreeT) . evalGen size s0 . runTest $ test
+                node = fmap (runIdentity . runTreeT) . runGen size s0 . runTest $ test
               let
                 mkReport =
                   Report (tests + 1) discards coverage0 seed0
@@ -331,7 +331,7 @@ checkReport cfg size0 seed0 test updateUI = do
             _ -> do
               let
                 node =
-                  fmap (runIdentity . runTreeT) . evalGen size s0 . runTest $ test
+                  fmap (runIdentity . runTreeT) . runGen size s0 . runTest $ test
               case node of
                 Nothing ->
                   loop tests (discards + 1) (size + 1) s1 coverage0
