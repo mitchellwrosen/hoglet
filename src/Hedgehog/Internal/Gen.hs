@@ -140,11 +140,10 @@ module Hedgehog.Internal.Gen (
 import           Control.Applicative (liftA2)
 #endif
 import           Control.Applicative (Alternative(..))
-import           Control.Monad (MonadPlus(..), filterM, guard, replicateM)
+import           Control.Monad (filterM, guard, replicateM)
 import           Control.Monad.IO.Class (MonadIO(..))
 import           Control.Monad.Morph (MFunctor(..))
 import qualified Control.Monad.Morph as Morph
-import           Control.Monad.Trans.Maybe (MaybeT(..))
 
 import           Data.Bifunctor (first)
 import           Data.ByteString (ByteString)
@@ -199,7 +198,7 @@ runGen size seed (Gen m) =
 --
 evalGen :: Size -> Seed -> Gen a -> Maybe (Tree a)
 evalGen size seed =
-  Tree.mapMaybe id .
+  Tree.catMaybes .
   evalGenT size seed
 
 -- | Runs a generator, producing its shrink tree.
@@ -207,7 +206,6 @@ evalGen size seed =
 evalGenT :: Size -> Seed -> Gen a -> Tree (Maybe a)
 evalGenT size seed =
   Tree.runTreeMaybeT .
-  hoist (MaybeT . pure) .
   runGen size seed
 
 -- | Map over a generator's shrink tree.
@@ -302,20 +300,13 @@ instance MonadFail Gen where
 
 instance Alternative Gen where
   empty =
-    mzero
+    fromTreeMaybeT empty
 
-  (<|>) =
-    mplus
-
-instance MonadPlus Gen where
-  mzero =
-    fromTreeMaybeT mzero
-
-  mplus x y =
+  x <|> y =
     Gen $ \size seed ->
       case Seed.split seed of
         (sx, sy) ->
-          runGen size sx x `mplus`
+          runGen size sx x <|>
           runGen size sy y
 
 ------------------------------------------------------------------------
@@ -1104,17 +1095,13 @@ list :: Range Int -> Gen a -> Gen [a]
 list range gen =
   let
      interleave =
-       (interleaveTreeT . nodeValue =<<)
+       (Tree.interleaveTreeT . nodeValue =<<)
   in
     sized $ \size ->
       ensure (atLeast $ Range.lowerBound size range) .
       mapGen (TreeT . interleave . runTreeT) $ do
         n <- integral_ range
         replicateM n (toTreeMaybeT gen)
-
-interleaveTreeT :: Monad m => [TreeT m a] -> m (NodeT m [a])
-interleaveTreeT =
-  fmap Tree.interleave . traverse runTreeT
 
 -- | Generates a seq using a 'Range' to determine the length.
 --

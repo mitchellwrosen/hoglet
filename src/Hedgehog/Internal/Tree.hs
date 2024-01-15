@@ -23,12 +23,13 @@ module Hedgehog.Internal.Tree (
   , expand
   , prune
 
-  , mapMaybe
+  , catMaybes
   , runTreeMaybeT
   , mapMaybeMaybeT
   , consChild
   , mapMaybeT
   , interleave
+  , interleaveTreeT
 
   , render
   ) where
@@ -37,10 +38,8 @@ module Hedgehog.Internal.Tree (
 import           Control.Applicative (liftA2)
 #endif
 import           Control.Applicative (Alternative(..))
-import           Control.Monad (MonadPlus(..), join)
-import           Control.Monad.Morph (MFunctor(..), generalize)
+import           Control.Monad.Morph (MFunctor(..))
 import           Control.Monad.Trans.Class (MonadTrans(..))
-import           Control.Monad.Trans.Maybe (MaybeT(..))
 
 import           Data.Functor.Identity (Identity(..))
 import           Data.Functor.Classes (Eq1(..))
@@ -108,6 +107,10 @@ fromNodeT :: Applicative m => NodeT m a -> TreeT m a
 fromNodeT =
   TreeT . pure
 
+singleton :: a -> Tree a
+singleton =
+  pure
+
 -- | The value at the root of the 'Tree'.
 --
 treeValue :: Tree a -> a
@@ -116,45 +119,45 @@ treeValue =
 
 -- | Create a tree from a value and an unfolding function.
 --
-unfold :: Monad m => (a -> [a]) -> a -> TreeT m a
+unfold :: (a -> [a]) -> a -> TreeT Maybe a
 unfold f x =
-  TreeT . pure $
+  TreeT . Just $
     NodeT x (unfoldForest f x)
 
 -- | Create a forest from a value and an unfolding function.
 --
-unfoldForest :: Monad m => (a -> [a]) -> a -> [TreeT m a]
+unfoldForest :: (a -> [a]) -> a -> [TreeT Maybe a]
 unfoldForest f =
   fmap (unfold f) . f
 
 -- | Expand a tree using an unfolding function.
 --
-expand :: Monad m => (a -> [a]) -> TreeT m a -> TreeT m a
+expand :: (a -> [a]) -> TreeT Maybe a -> TreeT Maybe a
 expand f m =
   TreeT $ do
     NodeT x xs <- runTreeT m
-    pure . NodeT x $
+    Just . NodeT x $
       fmap (expand f) xs ++ unfoldForest f x
 
 -- | Throw away all but the top @n@ levels of a tree's children.
 --
 --   /@prune 0@ will throw away all of a tree's children./
 --
-prune :: Monad m => Int -> TreeT m a -> TreeT m a
+prune :: Int -> TreeT Maybe a -> TreeT Maybe a
 prune n m =
   if n <= 0 then
     TreeT $ do
       NodeT x _ <- runTreeT m
-      pure $ NodeT x []
+      Just $ NodeT x []
   else
     TreeT $ do
       NodeT x xs0 <- runTreeT m
-      pure . NodeT x $
+      Just . NodeT x $
         fmap (prune (n - 1)) xs0
 
 -- | Takes a tree of 'Maybe's and returns a tree of all the 'Just' values.
 --
---   If the root of the tree is 'Nothing' then 'Nothing' is returned.
+--   If there are no 'Just' values then 'Nothing' is returned.
 --
 catMaybes :: Tree (Maybe a) -> Maybe (Tree a)
 catMaybes m =
@@ -174,74 +177,61 @@ catMaybes m =
         Just . Tree $
           Node x (Maybe.mapMaybe catMaybes mxs)
 
-mapMaybe :: (a -> Maybe b) -> Tree a -> Maybe (Tree b)
-mapMaybe p =
-  catMaybes .
-  runTreeMaybeT2 .
-  mapMaybeMaybeT p .
-  hoist (Just . runIdentity)
-
 -- | Run the discard effects through the tree and reify them as 'Maybe' values
 --   at the nodes.
 --
 --   'Nothing' means discarded, 'Just' means we have a value.
 --
-runTreeMaybeT :: Monad m => TreeT (MaybeT m) a -> TreeT m (Maybe a)
-runTreeMaybeT =
-  runMaybeT .
-  distributeTreeT
+runTreeMaybeT :: TreeT Maybe a -> Tree (Maybe a)
+runTreeMaybeT tree =
+  case runTreeT tree of
+    Nothing -> singleton Nothing
+    Just (NodeT root children) -> fromNodeT (NodeT (Just root) (map runTreeMaybeT children))
 
-runTreeMaybeT2 :: TreeT Maybe a -> Tree (Maybe a)
-runTreeMaybeT2 =
-  runTreeMaybeT .
-  hoist (MaybeT . pure)
+runTreeMaybeT2 :: TreeT Maybe a -> Maybe (Tree a)
+runTreeMaybeT2 tree =
+  case runTreeT tree of
+    Nothing -> Nothing
+    Just (NodeT root children) -> Just (fromNodeT (NodeT root (Maybe.mapMaybe runTreeMaybeT2 children)))
 
 mapMaybeMaybeT :: (a -> Maybe b) -> TreeT Maybe a -> TreeT Maybe b
 mapMaybeMaybeT p t =
   case runTreeMaybeT2 t of
-    Tree (Node Nothing _) ->
+    Nothing ->
       TreeT Nothing
-    Tree (Node (Just x) xs) ->
+    Just (Tree (Node x xs)) ->
       case p x of
         Nothing -> TreeT Nothing
         Just x' ->
-          hoist generalize $
+          hoist (Just . runIdentity) $
             Tree . Node x' $
               concatMap (flattenTree p) xs
 
-flattenTree :: (a -> Maybe b) -> Tree (Maybe a) -> [Tree b]
-flattenTree p (Tree (Node mx mxs0)) =
+flattenTree :: (a -> Maybe b) -> Tree a -> [Tree b]
+flattenTree p (Tree (Node x ys0)) =
   let
-    mxs =
-      concatMap (flattenTree p) mxs0
+    ys =
+      concatMap (flattenTree p) ys0
   in
-    case mx of
-      Nothing -> mxs
-      Just x ->
-        case p x of
-          Just x' ->
-            [Tree (Node x' mxs)]
-          Nothing ->
-            mxs
+    case p x of
+      Just x' ->
+        [Tree (Node x' ys)]
+      Nothing ->
+        ys
 
-mapMaybeT :: (Monad m, Alternative m) => (a -> Maybe b) -> TreeT m a -> TreeT m b
+mapMaybeT :: (a -> Maybe b) -> TreeT Maybe a -> TreeT Maybe b
 mapMaybeT p m =
   TreeT $ do
     NodeT x xs <- runTreeT m
-    case p x of
-      Just x' ->
-        pure $
-          NodeT x' (fmap (mapMaybeT p) xs)
-      Nothing ->
-        empty
+    (\x' -> NodeT x' (fmap (mapMaybeT p) xs)) <$> p x
 
-consChild :: (Monad m) => a -> TreeT m a -> TreeT m a
+consChild :: a -> Tree a -> Tree a
 consChild a m =
   TreeT $ do
     NodeT x xs <- runTreeT m
-    pure $
+    Identity $
       NodeT x $
-        pure a : xs
+        singleton a : xs
 
 ------------------------------------------------------------------------
 
@@ -283,28 +273,31 @@ removes k = \xs -> go xs
       where
         (xs1, xs2) = splitAt k xs
 
-dropSome :: Monad m => [NodeT m a] -> [TreeT m [a]]
+dropSome :: [NodeT Maybe a] -> [TreeT Maybe [a]]
 dropSome ts = do
   n   <- takeWhile (> 0) $ iterate (`div` 2) (length ts)
   ts' <- removes n ts
-  pure . TreeT . pure $ interleave ts'
+  [TreeT . Just $ interleave ts']
 
-shrinkOne :: Monad m => [NodeT m a] -> [TreeT m [a]]
+shrinkOne :: [NodeT Maybe a] -> [TreeT Maybe [a]]
 shrinkOne ts = do
   (xs, y0, zs) <- splits ts
   y1 <- nodeChildren y0
-  pure . TreeT $ do
+  [TreeT $ do
     y2 <- runTreeT y1
-    pure $
-      interleave (xs ++ [y2] ++ zs)
+    Just $ interleave (xs ++ [y2] ++ zs)]
 
-interleave :: forall m a. Monad m => [NodeT m a] -> NodeT m [a]
+interleave :: [NodeT Maybe a] -> NodeT Maybe [a]
 interleave ts =
   NodeT (fmap nodeValue ts) $
     concat [
         dropSome ts
       , shrinkOne ts
       ]
+
+interleaveTreeT :: [TreeT Maybe a] -> Maybe (NodeT Maybe [a])
+interleaveTreeT =
+  fmap interleave . traverse runTreeT
 
 ------------------------------------------------------------------------
 
@@ -380,17 +373,11 @@ instance Alternative m => Alternative (TreeT m) where
   (<|>) x y =
     TreeT (runTreeT x <|> runTreeT y)
 
-instance MonadPlus m => MonadPlus (TreeT m) where
-  mzero =
-    TreeT mzero
-  mplus x y =
-    TreeT (runTreeT x `mplus` runTreeT y)
-
-zipTreeT :: forall f a b. Applicative f => TreeT f a -> TreeT f b -> TreeT f (a, b)
+zipTreeT :: forall a b. TreeT Maybe a -> TreeT Maybe b -> TreeT Maybe (a, b)
 zipTreeT l0@(TreeT left) r0@(TreeT right) =
   TreeT $
     let
-      zipNodeT :: NodeT f a -> NodeT f b -> NodeT f (a, b)
+      zipNodeT :: NodeT Maybe a -> NodeT Maybe b -> NodeT Maybe (a, b)
       zipNodeT (NodeT a ls) (NodeT b rs) =
           NodeT (a, b) $
             concat [
@@ -412,15 +399,6 @@ instance MFunctor NodeT where
 instance MFunctor TreeT where
   hoist f (TreeT m) =
     TreeT . f $ fmap (hoist f) m
-
-distributeNodeT :: (Monad m, MonadTrans t, MFunctor t) => NodeT (t m) a -> t (TreeT m) a
-distributeNodeT (NodeT x xs) =
-  join . lift . fromNodeT . NodeT (pure x) $
-    fmap (pure . distributeTreeT) xs
-
-distributeTreeT :: (Monad m, MonadTrans t, MFunctor t) => TreeT (t m) a -> t (TreeT m) a
-distributeTreeT x =
-  distributeNodeT =<< hoist lift (runTreeT x)
 
 ------------------------------------------------------------------------
 -- Show/Show1 instances
@@ -468,12 +446,9 @@ instance Show1 m => Show1 (TreeT m) where
 -- Rendering implementation based on the one from containers/Data.Tree
 --
 
-renderTreeTLines :: Monad m => TreeT m String -> m [String]
-renderTreeTLines (TreeT m) = do
-  NodeT x xs0 <- m
-  xs <- renderForestLines xs0
-  pure $
-    lines (renderNodeT x) ++ xs
+renderTreeTLines :: TreeT Identity String -> [String]
+renderTreeTLines (Tree (Node x xs0)) = do
+  lines (renderNodeT x) ++ renderForestLines xs0
 
 renderNodeT :: String -> String
 renderNodeT xs =
@@ -483,7 +458,7 @@ renderNodeT xs =
     _ ->
       xs
 
-renderForestLines :: Monad m => [TreeT m String] -> m [String]
+renderForestLines :: [TreeT Identity String] -> [String]
 renderForestLines xs0 =
   let
     shift hd other =
@@ -491,28 +466,16 @@ renderForestLines xs0 =
   in
     case xs0 of
       [] ->
-        pure []
+        []
 
-      [x] -> do
-        s <- renderTreeTLines x
-        pure $
-          shift " └╼" "   " s
+      [x] ->
+        shift " └╼" "   " (renderTreeTLines x)
 
-      x : xs -> do
-        s <- renderTreeTLines x
-        ss <- renderForestLines xs
-        pure $
-          shift " ├╼" " │ " s ++ ss
+      x : xs ->
+        shift " ├╼" " │ " (renderTreeTLines x) ++ (renderForestLines xs)
 
 -- | Render a tree of strings.
 --
 render :: Tree String -> String
 render =
-  runIdentity . renderT
-
--- | Render a tree of strings, note that this forces all the delayed effects in
---   the tree.
---
-renderT :: Monad m => TreeT m String -> m String
-renderT =
-  fmap unlines . renderTreeTLines
+  unlines . renderTreeTLines
