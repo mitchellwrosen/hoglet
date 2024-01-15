@@ -14,6 +14,8 @@ module Hedgehog.Internal.Tree (
     Tree
   , pattern Tree
   , TreeT(..)
+  , runTree
+  , singleton
   , zipTreeT
   , treeValue
 
@@ -24,10 +26,9 @@ module Hedgehog.Internal.Tree (
   , prune
 
   , runTreeMaybeT
-  , mapMaybeMaybeT
+  , unRunTreeMaybeT
   , consChild
   , mapMaybeT
-  , interleave
   , interleaveTreeT
 
   , render
@@ -118,41 +119,33 @@ treeValue =
 
 -- | Create a tree from a value and an unfolding function.
 --
-unfold :: (a -> [a]) -> a -> TreeT Maybe a
+unfold :: (a -> [a]) -> a -> Tree a
 unfold f x =
-  TreeT . Just $
+  fromNodeT $
     NodeT x (unfoldForest f x)
 
 -- | Create a forest from a value and an unfolding function.
 --
-unfoldForest :: (a -> [a]) -> a -> [TreeT Maybe a]
+unfoldForest :: (a -> [a]) -> a -> [Tree a]
 unfoldForest f =
   fmap (unfold f) . f
 
 -- | Expand a tree using an unfolding function.
 --
-expand :: (a -> [a]) -> TreeT Maybe a -> TreeT Maybe a
-expand f m =
-  TreeT $ do
-    NodeT x xs <- runTreeT m
-    Just . NodeT x $
-      fmap (expand f) xs ++ unfoldForest f x
+expand :: (a -> [a]) -> Tree a -> Tree a
+expand f (Tree (Node x xs)) =
+  fromNodeT (Node x (map (expand f) xs ++ unfoldForest f x))
 
 -- | Throw away all but the top @n@ levels of a tree's children.
 --
 --   /@prune 0@ will throw away all of a tree's children./
 --
-prune :: Int -> TreeT Maybe a -> TreeT Maybe a
-prune n m =
+prune :: Int -> Tree a -> Tree a
+prune n (Tree (Node x xs)) =
   if n <= 0 then
-    TreeT $ do
-      NodeT x _ <- runTreeT m
-      Just $ NodeT x []
+    fromNodeT (Node x [])
   else
-    TreeT $ do
-      NodeT x xs0 <- runTreeT m
-      Just . NodeT x $
-        fmap (prune (n - 1)) xs0
+    fromNodeT (Node x (map (prune (n - 1)) xs))
 
 runTreeMaybeT :: TreeT Maybe a -> Maybe (Tree a)
 runTreeMaybeT tree =
@@ -160,24 +153,20 @@ runTreeMaybeT tree =
     Nothing -> Nothing
     Just (NodeT root children) -> Just (fromNodeT (NodeT root (Maybe.mapMaybe runTreeMaybeT children)))
 
-mapMaybeMaybeT :: (a -> Maybe b) -> TreeT Maybe a -> TreeT Maybe b
-mapMaybeMaybeT p t =
-  case runTreeMaybeT t of
-    Nothing ->
-      TreeT Nothing
-    Just (Tree (Node x xs)) ->
-      case p x of
-        Nothing -> TreeT Nothing
-        Just x' ->
-          hoist (Just . runIdentity) $
-            Tree . Node x' $
-              concatMap (flattenTree p) xs
+unRunTreeMaybeT :: Maybe (Tree a) -> TreeT Maybe a
+unRunTreeMaybeT = \case
+  Nothing -> TreeT Nothing
+  Just tree -> hoist (Just . runIdentity) tree
+
+mapMaybeT :: (a -> Maybe b) -> Tree a -> Maybe (Tree b)
+mapMaybeT p (Tree (Node x xs)) =
+  (\y -> fromNodeT (Node y (flattenTrees p xs))) <$> p x
 
 flattenTree :: (a -> Maybe b) -> Tree a -> [Tree b]
 flattenTree p (Tree (Node x ys0)) =
   let
     ys =
-      concatMap (flattenTree p) ys0
+      flattenTrees p ys0
   in
     case p x of
       Just x' ->
@@ -185,11 +174,10 @@ flattenTree p (Tree (Node x ys0)) =
       Nothing ->
         ys
 
-mapMaybeT :: (a -> Maybe b) -> TreeT Maybe a -> TreeT Maybe b
-mapMaybeT p m =
-  TreeT $ do
-    NodeT x xs <- runTreeT m
-    (\x' -> NodeT x' (fmap (mapMaybeT p) xs)) <$> p x
+flattenTrees :: (a -> Maybe b) -> [Tree a] -> [Tree b]
+flattenTrees =
+  concatMap .
+  flattenTree
 
 consChild :: a -> Tree a -> Tree a
 consChild a m =
@@ -239,21 +227,19 @@ removes k = \xs -> go xs
       where
         (xs1, xs2) = splitAt k xs
 
-dropSome :: [NodeT Maybe a] -> [TreeT Maybe [a]]
+dropSome :: [NodeT Identity a] -> [Tree [a]]
 dropSome ts = do
   n   <- takeWhile (> 0) $ iterate (`div` 2) (length ts)
   ts' <- removes n ts
-  [TreeT . Just $ interleave ts']
+  [fromNodeT $ interleave ts']
 
-shrinkOne :: [NodeT Maybe a] -> [TreeT Maybe [a]]
+shrinkOne :: [NodeT Identity a] -> [Tree [a]]
 shrinkOne ts = do
   (xs, y0, zs) <- splits ts
   y1 <- nodeChildren y0
-  [TreeT $ do
-    y2 <- runTreeT y1
-    Just $ interleave (xs ++ [y2] ++ zs)]
+  [fromNodeT $ interleave (xs ++ [runTree y1] ++ zs)]
 
-interleave :: [NodeT Maybe a] -> NodeT Maybe [a]
+interleave :: [NodeT Identity a] -> NodeT Identity [a]
 interleave ts =
   NodeT (fmap nodeValue ts) $
     concat [
@@ -261,9 +247,9 @@ interleave ts =
       , shrinkOne ts
       ]
 
-interleaveTreeT :: [TreeT Maybe a] -> Maybe (NodeT Maybe [a])
+interleaveTreeT :: [Tree a] -> NodeT Identity [a]
 interleaveTreeT =
-  fmap interleave . traverse runTreeT
+  interleave . map runTree
 
 ------------------------------------------------------------------------
 

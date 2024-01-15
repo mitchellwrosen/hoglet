@@ -97,10 +97,7 @@ module Hedgehog.Internal.Gen (
   , ensure
   , filter
   , mapMaybe
-  , filterT
-  , mapMaybeT
   , just
-  , justT
 
   -- ** Collections
   , maybe
@@ -201,10 +198,10 @@ evalGen size seed =
 
 -- | Map over a generator's shrink tree.
 --
-mapGen :: (TreeT Maybe a -> TreeT Maybe b) -> Gen a -> Gen b
+mapGen :: (Maybe (Tree a) -> Maybe (Tree b)) -> Gen a -> Gen b
 mapGen f gen =
   Gen $ \size seed ->
-    f (runGen size seed gen)
+    Tree.unRunTreeMaybeT (f (evalGen size seed gen))
 
 -- | Lift a predefined shrink tree in to a generator, ignoring the seed and the
 --   size.
@@ -217,9 +214,17 @@ fromTreeMaybeT x =
 -- | Lift a predefined shrink tree in to a generator, ignoring the seed and the
 --   size.
 --
-toTreeMaybeT :: Gen a -> Gen (TreeT Maybe a)
+fromTreeMaybeT2 :: Maybe (Tree a) -> Gen a
+fromTreeMaybeT2 x =
+  Gen $ \_ _ ->
+    Tree.unRunTreeMaybeT x
+
+-- | Lift a predefined shrink tree in to a generator, ignoring the seed and the
+--   size.
+--
+toTreeMaybeT :: Gen a -> Gen (Maybe (Tree a))
 toTreeMaybeT =
-  mapGen pure
+  mapGen (fmap (fmap (Just . Tree.singleton)))
 
 ------------------------------------------------------------------------
 -- Gen instances
@@ -251,7 +256,7 @@ instance Functor Gen where
 --
 instance Applicative Gen where
   pure =
-    fromTreeMaybeT . pure
+    fromTreeMaybeT2 . Just . pure
 
   (<*>) f m =
     Gen $ \size seed ->
@@ -320,13 +325,13 @@ generate f =
 --
 shrink :: (a -> [a]) -> Gen a -> Gen a
 shrink f =
-  mapGen (Tree.expand f)
+  mapGen (fmap (Tree.expand f))
 
 -- | Throw away a generator's shrink tree.
 --
 prune :: Gen a -> Gen a
 prune =
-  mapGen (Tree.prune 0)
+  mapGen (fmap (Tree.prune 0))
 
 ------------------------------------------------------------------------
 -- Combinators - Size
@@ -951,68 +956,7 @@ mapMaybe p gen0 =
 
         case p x of
           Just _ ->
-            mapGen (Tree.mapMaybeMaybeT p) gen
-          Nothing ->
-            try (k + 1)
-  in
-    try 0
-
--- | Generates a value that satisfies a predicate.
---
---   Shrinks of the generated value will also satisfy the predicate. From the
---   original generator's shrink tree, any values that fail the predicate will
---   be removed, along with their subsequent shrinks. Compared to 'filter',
---   shrinking may be faster but may also be less optimal.
---
---   The type is also more general, because the shrink behavior from 'filter'
---   would force the entire shrink tree to be evaluated when applied to an
---   impure tree.
---
---   This is essentially:
---
--- @
---   filterT p gen = 'mfilter' p gen '<|>' filterT p gen
--- @
---
---   But that could loop forever, if the predicate will never pass or will only
---   pass at a larger size than we're currently running at. We differ from the
---   above in keeping some state to avoid that. We limit the number of retries,
---   and grow the size with each retry. If we retry too many times then the
---   whole generator is discarded.
---
-filterT :: (a -> Bool) -> Gen a -> Gen a
-filterT p =
-  mapMaybeT (fromPred p)
-
--- | Generates a value which is the result of the given function returning a
---   'Just'.
---
---   The original generator's shrink tree will be retained, with values
---   returning 'Nothing' removed. Subsequent shrinks of those values will be
---   retained. Compared to 'mapMaybeT', shrinking may be slower but will be
---   optimal.
---
---   The type is also more general, because the shrink behavior from 'mapMaybe'
---   would force the entire shrink tree to be evaluated when applied to an
---   impure tree.
---
---   It's possible that the function will never return 'Just', or will only do
---   so a larger size than we're currently running at. To avoid looping forever,
---   we limit the number of retries, and grow the size with each retry. If we
---   retry too many times then the whole generator is discarded.
---
-mapMaybeT :: (a -> Maybe b) -> Gen a -> Gen b
-mapMaybeT p gen0 =
-  let
-    try k =
-      if k > 100 then
-        discard
-      else do
-        (x, gen) <- freeze $ scale (2 * k +) gen0
-
-        case p x of
-          Just _ ->
-            mapGen (Tree.mapMaybeT p) gen
+            mapGen (Tree.mapMaybeT p =<<) gen
           Nothing ->
             try (k + 1)
   in
@@ -1025,19 +969,6 @@ mapMaybeT p gen0 =
 just :: Gen (Maybe a) -> Gen a
 just g = do
   mx <- filter Maybe.isJust g
-  case mx of
-    Just x ->
-      pure x
-    Nothing ->
-      error "Hedgehog.Gen.just: internal error, unexpected Nothing"
-
--- | Runs a 'Maybe' generator until it produces a 'Just'.
---
---   /This is implemented using 'filter' and has the same caveats./
---
-justT :: Gen (Maybe a) -> Gen a
-justT g = do
-  mx <- filterT Maybe.isJust g
   case mx of
     Just x ->
       pure x
@@ -1082,15 +1013,15 @@ either_ genA genB =
 
 -- | Generates a list using a 'Range' to determine the length.
 --
-list :: Range Int -> Gen a -> Gen [a]
+list :: forall a. Range Int -> Gen a -> Gen [a]
 list range gen =
   let
-     interleave =
-       (Tree.interleaveTreeT . nodeValue =<<)
+     interleave :: Tree [Maybe (Tree a)] -> Tree [a]
+     interleave = Tree.fromNodeT . Tree.interleaveTreeT . Maybe.catMaybes . nodeValue . Tree.runTree
   in
     sized $ \size ->
       ensure (atLeast $ Range.lowerBound size range) .
-      mapGen (TreeT . interleave . runTreeT) $ do
+      mapGen (fmap interleave) $ do
         n <- integral_ range
         replicateM n (toTreeMaybeT gen)
 
