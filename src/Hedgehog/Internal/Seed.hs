@@ -1,6 +1,5 @@
 {-# OPTIONS_HADDOCK not-home #-}
 {-# LANGUAGE CPP #-}
-{-# LANGUAGE DeriveLift #-}
 -- |
 -- This is a port of "Fast Splittable Pseudorandom Number Generators" by Steele
 -- et. al. [1].

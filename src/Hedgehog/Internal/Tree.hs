@@ -1,19 +1,10 @@
 {-# OPTIONS_HADDOCK not-home #-}
 {-# LANGUAGE CPP #-}
-{-# LANGUAGE ConstraintKinds #-}
 {-# LANGUAGE DeriveFoldable #-}
 {-# LANGUAGE DeriveFunctor #-}
 {-# LANGUAGE DeriveTraversable #-}
 {-# LANGUAGE DerivingStrategies #-}
-{-# LANGUAGE DoAndIfThenElse #-}
-{-# LANGUAGE FlexibleContexts #-}
-{-# LANGUAGE FlexibleInstances #-}
-{-# LANGUAGE LambdaCase #-}
-{-# LANGUAGE MultiParamTypeClasses #-}
-{-# LANGUAGE PatternSynonyms #-}
 {-# LANGUAGE RankNTypes #-}
-{-# LANGUAGE ScopedTypeVariables #-}
-{-# LANGUAGE TypeFamilies #-}
 module Hedgehog.Internal.Tree (
     Tree(..)
   , singleton

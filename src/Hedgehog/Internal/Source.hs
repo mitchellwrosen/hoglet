@@ -1,9 +1,5 @@
 {-# OPTIONS_HADDOCK not-home #-}
-{-# LANGUAGE ConstraintKinds #-}
 {-# LANGUAGE GeneralizedNewtypeDeriving #-}
-{-# LANGUAGE KindSignatures #-}
-{-# LANGUAGE RankNTypes #-}
-{-# LANGUAGE TypeFamilies #-}
 module Hedgehog.Internal.Source (
     LineNo(..)
   , ColumnNo(..)
