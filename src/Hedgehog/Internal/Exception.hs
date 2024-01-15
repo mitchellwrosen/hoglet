@@ -1,7 +1,6 @@
 {-# OPTIONS_HADDOCK not-home #-}
 module Hedgehog.Internal.Exception (
-    tryAll
-  , tryEvaluate
+    tryEvaluate
   ) where
 
 import           Control.Exception (Exception(..), AsyncException, SomeException(..), evaluate)

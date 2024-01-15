@@ -16,20 +16,10 @@ module Hedgehog.Internal.Report (
   , Report(..)
   , Progress(..)
   , Result(..)
-  , FailureReport(..)
-  , FailedAnnotation(..)
-
-  , Style(..)
-  , Markup(..)
 
   , renderProgress
   , renderResult
   , renderSummary
-  , renderDoc
-
-  , ppProgress
-  , ppResult
-  , ppSummary
 
   , fromResult
   , mkFailure
@@ -56,7 +46,6 @@ import           Data.Traversable (for)
 import           Hedgehog.Internal.Config
 import           Hedgehog.Internal.Discovery (Pos(..), Position(..))
 import qualified Hedgehog.Internal.Discovery as Discovery
-import           Hedgehog.Internal.Prelude
 import           Hedgehog.Internal.Property (CoverCount(..), CoverPercentage(..))
 import           Hedgehog.Internal.Property (Coverage(..), Label(..), LabelName(..))
 import           Hedgehog.Internal.Property (Log(..), Diff(..))
@@ -65,9 +54,10 @@ import           Hedgehog.Internal.Property (TestCount(..), DiscardCount(..))
 import           Hedgehog.Internal.Property (coverPercentage, coverageFailures)
 import           Hedgehog.Internal.Property (labelCovered)
 import           Hedgehog.Internal.Property (ShrinkPath(..), skipCompress)
-
 import           Hedgehog.Internal.Show
 import           Hedgehog.Internal.Source
+
+import           Prelude
 
 import           System.Console.ANSI (ColorIntensity(..), Color(..))
 import           System.Console.ANSI (ConsoleLayer(..), ConsoleIntensity(..))

@@ -9,16 +9,9 @@ module Hedgehog.Internal.Source (
   , ColumnNo(..)
   , Span(..)
   , getCaller
-
-  -- * Re-exports from "GHC.Stack"
-  , CallStack
-  , HasCallStack
-  , callStack
-  , withFrozenCallStack
   ) where
 
-import GHC.Stack (CallStack, HasCallStack, SrcLoc(..))
-import GHC.Stack (callStack, getCallStack, withFrozenCallStack)
+import GHC.Stack (CallStack, SrcLoc(..), getCallStack)
 
 
 newtype LineNo =

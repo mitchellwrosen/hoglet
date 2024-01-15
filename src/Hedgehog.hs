@@ -114,19 +114,8 @@ module Hedgehog (
   , cover
   , label
   , collect
-
-  -- * Functors
-  , Eq1
-  , eq1
-
-  , Ord1
-  , compare1
-
-  , Show1
-  , showsPrec1
   ) where
 
-import           Data.Functor.Classes (Eq1, eq1, Ord1, compare1, Show1, showsPrec1)
 
 import           Hedgehog.Internal.Gen (Gen)
 import           Hedgehog.Internal.Property (annotate, annotateShow)

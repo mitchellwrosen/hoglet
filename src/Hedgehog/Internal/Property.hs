@@ -20,7 +20,6 @@
 {-# LANGUAGE TemplateHaskell #-}
 {-# LANGUAGE TupleSections #-}
 {-# LANGUAGE TypeFamilies #-}
-{-# LANGUAGE UndecidableInstances #-} -- Distributive
 
 module Hedgehog.Internal.Property (
   -- * Property
@@ -48,9 +47,7 @@ module Hedgehog.Internal.Property (
   , defaultMinTests
   , discard
   , skipCompress
-  , shrinkPathCompress
   , skipDecompress
-  , shrinkPathDecompress
 
   -- * Group
   , Group(..)
@@ -94,10 +91,8 @@ module Hedgehog.Internal.Property (
   , coverageFailures
   , journalCoverage
 
-  , Cover(..)
   , CoverCount(..)
   , CoverPercentage(..)
-  , toCoverCount
 
   -- * Confidence
   , Confidence(..)
@@ -106,21 +101,11 @@ module Hedgehog.Internal.Property (
   , confidenceFailure
   , withConfidence
   , verifiedTermination
-  , defaultConfidence
 
   -- * Internal
-  -- $internal
-  , defaultConfig
-  , mapConfig
-  , failDiff
-  , failException
   , failWith
-  , writeLog
 
-  , mkTest
   , runTest
-
-  , wilsonBounds
   ) where
 
 import           Control.DeepSeq (NFData, rnf)
@@ -141,14 +126,17 @@ import           Data.Ratio ((%))
 import           Data.Text (Text)
 import           Data.Typeable (typeOf)
 
-import           Hedgehog.Internal.Exception
+import           GHC.Stack (HasCallStack, callStack, withFrozenCallStack)
+
+import           Hedgehog.Internal.Exception (tryEvaluate)
 import           Hedgehog.Internal.Gen (Gen)
 import qualified Hedgehog.Internal.Gen as Gen
-import           Hedgehog.Internal.Prelude
 import           Hedgehog.Internal.Show
 import           Hedgehog.Internal.Source
 
 import qualified Numeric
+
+import           Prelude
 
 import           Text.Read (readMaybe)
 
@@ -1176,12 +1164,3 @@ collect :: (Show a, HasCallStack) => a -> Test ()
 collect x =
   withFrozenCallStack $
     cover 0 (LabelName (show x)) True
-
-------------------------------------------------------------------------
--- Internal
-
--- $internal
---
--- These functions are exported in case you need them in a pinch, but are not
--- part of the public API and may change at any time, even as part of a minor
--- update.

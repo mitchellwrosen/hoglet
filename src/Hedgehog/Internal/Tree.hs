@@ -14,38 +14,24 @@ module Hedgehog.Internal.Tree (
     Tree
   , pattern Tree
   , TreeT(..)
-  , runTree
-  , mapTreeT
   , zipTreeT
   , treeValue
-  , treeChildren
 
-  , Node
-  , pattern Node
   , NodeT(..)
   , fromNodeT
-
-  , unfold
-  , unfoldForest
 
   , expand
   , prune
 
-  , catMaybes
-  , filter
   , mapMaybe
   , runTreeMaybe
   , runTreeMaybeT
-  , filterMaybeT
   , mapMaybeMaybeT
-  , filterT
   , consChild
   , mapMaybeT
-  , depth
   , interleave
 
   , render
-  , renderT
   ) where
 
 #if !MIN_VERSION_base(4,18,0)
@@ -53,7 +39,7 @@ import           Control.Applicative (liftA2)
 #endif
 import           Control.Applicative (Alternative(..))
 import           Control.Exception.Safe (Exception)
-import           Control.Monad (MonadPlus(..), guard, join)
+import           Control.Monad (MonadPlus(..), join)
 import           Control.Monad.Catch (MonadThrow(throwM), MonadCatch(catch))
 import           Control.Monad.IO.Class (MonadIO(..))
 import           Control.Monad.Morph (MFunctor(..), generalize)
@@ -120,12 +106,6 @@ runTree :: Tree a -> Node a
 runTree =
   runIdentity . runTreeT
 
--- | Map between 'TreeT' computations.
---
-mapTreeT :: (m (NodeT m a) -> m (NodeT m a)) -> TreeT m a -> TreeT m a
-mapTreeT f =
-  TreeT . f . runTreeT
-
 -- | Create a 'TreeT' from a 'NodeT'
 --
 fromNodeT :: Applicative m => NodeT m a -> TreeT m a
@@ -137,12 +117,6 @@ fromNodeT =
 treeValue :: Tree a -> a
 treeValue =
   nodeValue . runTree
-
--- | The children of the 'Tree'.
---
-treeChildren :: Tree a -> [Tree a]
-treeChildren =
-  nodeChildren . runTree
 
 -- | Create a tree from a value and an unfolding function.
 --
@@ -182,22 +156,6 @@ prune n m =
       pure . NodeT x $
         fmap (prune (n - 1)) xs0
 
--- | Returns the depth of the deepest leaf node in the tree.
---
-depth :: Tree a -> Int
-depth m =
-  let
-    NodeT _ xs =
-      runTree m
-
-    n =
-      if null xs then
-        0
-      else
-        maximum (fmap depth xs)
-  in
-    1 + n
-
 -- | Takes a tree of 'Maybe's and returns a tree of all the 'Just' values.
 --
 --   If the root of the tree is 'Nothing' then 'Nothing' is returned.
@@ -219,17 +177,6 @@ catMaybes m =
       Just x ->
         Just . Tree $
           Node x (Maybe.mapMaybe catMaybes mxs)
-
-fromPred :: (a -> Bool) -> a -> Maybe a
-fromPred p a = a <$ guard (p a)
-
--- | Returns a tree containing only elements that match the predicate.
---
---   If the root of the tree does not match the predicate then 'Nothing' is
---   returned.
---
-filter :: (a -> Bool) -> Tree a -> Maybe (Tree a)
-filter p = mapMaybe (fromPred p)
 
 mapMaybe :: (a -> Maybe b) -> Tree a -> Maybe (Tree b)
 mapMaybe p =
@@ -266,14 +213,6 @@ runTreeMaybeT2 =
   runTreeMaybeT .
   hoist (MaybeT . pure)
 
--- | Returns a tree containing only elements that match the predicate.
---
---   If the root of the tree does not match the predicate then 'Nothing' is
---   returned.
---
-filterMaybeT :: (a -> Bool) -> TreeT Maybe a -> TreeT Maybe a
-filterMaybeT p = mapMaybeMaybeT (fromPred p)
-
 mapMaybeMaybeT :: (a -> Maybe b) -> TreeT Maybe a -> TreeT Maybe b
 mapMaybeMaybeT p t =
   case runTreeMaybeT2 t of
@@ -301,15 +240,6 @@ flattenTree p (Tree (Node mx mxs0)) =
             [Tree (Node x' mxs)]
           Nothing ->
             mxs
-
--- | Returns a tree containing only elements that match the predicate.
---
---   When an element does not match the predicate its node is replaced with
---   'empty'.
---
-filterT :: (Monad m, Alternative m) => (a -> Bool) -> TreeT m a -> TreeT m a
-filterT p =
-  mapMaybeT (fromPred p)
 
 mapMaybeT :: (Monad m, Alternative m) => (a -> Maybe b) -> TreeT m a -> TreeT m b
 mapMaybeT p m =

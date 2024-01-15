@@ -3,9 +3,10 @@ module Hedgehog.Internal.Tripping (
     tripping
   ) where
 
+import           GHC.Stack (HasCallStack, withFrozenCallStack)
+
 import           Hedgehog.Internal.Property (Test, Diff(..), success, failWith)
 import           Hedgehog.Internal.Show (valueDiff, mkValue, showPretty)
-import           Hedgehog.Internal.Source (HasCallStack, withFrozenCallStack)
 
 
 -- | Test that a pair of encode / decode functions are compatible.

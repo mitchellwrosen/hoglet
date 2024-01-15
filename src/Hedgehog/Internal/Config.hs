@@ -21,12 +21,7 @@ module Hedgehog.Internal.Config (
   , Skip(..)
   , resolveSkip
 
-  , detectMark
   , detectColor
-  , detectSeed
-  , detectVerbosity
-  , detectWorkers
-  , detectSkip
   ) where
 
 import           Control.Monad.IO.Class (MonadIO(..))

@@ -30,14 +30,6 @@ module Hedgehog.Internal.Range (
   , exponentialBounded
   , exponentialFloat
   , exponentialFloatFrom
-
-  -- * Internal
-  -- $internal
-  , clamp
-  , scaleLinear
-  , scaleLinearFrac
-  , scaleExponential
-  , scaleExponentialFloat
   ) where
 
 import           Data.Bifunctor (bimap)
@@ -473,13 +465,3 @@ scaleExponentialFloat sz0 z n =
       (((abs (n - z) + 1) ** (realToFrac sz / 99)) - 1) * signum (n - z)
   in
     z + diff
-
-
-------------------------------------------------------------------------
--- Internal
-
--- $internal
---
--- These functions are exported in case you need them in a pinch, but are not
--- part of the public API and may change at any time, even as part of a minor
--- update.

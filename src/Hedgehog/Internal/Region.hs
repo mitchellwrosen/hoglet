@@ -5,7 +5,6 @@ module Hedgehog.Internal.Region (
   , newOpenRegion
   , openRegion
   , setRegion
-  , displayRegions
   , displayRegion
   , moveToBottom
   , finishRegion

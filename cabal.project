@@ -1,8 +1,0 @@
-packages: .
-
-if impl(ghc >= 9.8)
-  package hedgehog
-    ghc-options: -Wall -Werror -Wwarn=x-partial
-else
-  package hedgehog
-    ghc-options: -Wall -Werror

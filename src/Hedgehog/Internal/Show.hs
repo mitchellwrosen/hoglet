@@ -11,15 +11,7 @@ module Hedgehog.Internal.Show (
   , showPretty
 
   , valueDiff
-  , lineDiff
   , toLineDiff
-
-  , renderValue
-  , renderValueDiff
-  , renderLineDiff
-
-  , takeLeft
-  , takeRight
   ) where
 
 import           Data.Bifunctor (second)
@@ -55,21 +47,6 @@ renderValue :: Value -> String
 renderValue =
   valToStr
 
-renderValueDiff :: ValueDiff -> String
-renderValueDiff =
-  unlines .
-  fmap renderLineDiff .
-  toLineDiff
-
-renderLineDiff :: LineDiff -> String
-renderLineDiff = \case
-  LineSame x ->
-    "  " ++ x
-  LineRemoved x ->
-    "- " ++ x
-  LineAdded x ->
-    "+ " ++ x
-
 mkValue :: Show a => a -> Maybe Value
 mkValue =
   reify
@@ -77,10 +54,6 @@ mkValue =
 showPretty :: Show a => a -> String
 showPretty =
   ppShow
-
-lineDiff :: Value -> Value -> [LineDiff]
-lineDiff x y =
-  toLineDiff $ valueDiff x y
 
 toLineDiff :: ValueDiff -> [LineDiff]
 toLineDiff =

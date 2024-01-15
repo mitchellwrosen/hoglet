@@ -16,15 +16,8 @@ module Hedgehog.Internal.Runner (
   , recheckAt
 
   -- * Running Groups of Properties
-  , RunnerConfig(..)
   , checkParallel
   , checkSequential
-  , checkGroup
-
-  -- * Internal
-  , checkReport
-  , checkRegion
-  , checkNamed
   ) where
 
 import           Control.Concurrent.STM (TVar, atomically)
@@ -36,7 +29,6 @@ import           Data.Text (Text)
 
 import           Hedgehog.Internal.Config
 import           Hedgehog.Internal.Gen (evalGenT)
-import           Hedgehog.Internal.Prelude
 import           Hedgehog.Internal.Property (DiscardCount(..), ShrinkCount(..))
 import           Hedgehog.Internal.Property (Group(..), GroupName(..))
 import           Hedgehog.Internal.Property (Journal(..), Coverage(..), CoverCount(..))
@@ -50,11 +42,13 @@ import           Hedgehog.Internal.Property (coverageSuccess, journalCoverage)
 import           Hedgehog.Internal.Property (defaultMinTests)
 import           Hedgehog.Internal.Property (ShrinkPath(..))
 import           Hedgehog.Internal.Queue
+import           Hedgehog.Internal.Range (Size)
 import           Hedgehog.Internal.Region
 import           Hedgehog.Internal.Report
 import qualified Hedgehog.Internal.Seed as Seed
 import           Hedgehog.Internal.Tree (TreeT(..), NodeT(..))
-import           Hedgehog.Range (Size)
+
+import           Prelude
 
 #if mingw32_HOST_OS
 import           System.IO (hSetEncoding, stdout, stderr, utf8)

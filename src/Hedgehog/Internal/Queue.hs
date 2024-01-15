@@ -2,14 +2,9 @@
 {-# LANGUAGE GeneralizedNewtypeDeriving #-}
 {-# LANGUAGE LambdaCase #-}
 module Hedgehog.Internal.Queue (
-    TaskIndex(..)
-  , TasksRemaining(..)
+    TasksRemaining(..)
 
   , runTasks
-  , finalizeTask
-
-  , runActiveFinalizers
-  , dequeueMVar
 
   , updateNumCapabilities
   ) where

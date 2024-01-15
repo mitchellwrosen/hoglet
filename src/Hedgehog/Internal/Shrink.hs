@@ -3,10 +3,6 @@ module Hedgehog.Internal.Shrink (
     towards
   , towardsFloat
   , list
-
-  , halves
-  , removes
-  , consNub
   ) where
 
 

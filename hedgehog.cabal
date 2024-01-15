@@ -85,7 +85,6 @@ library
     Hedgehog.Internal.Discovery
     Hedgehog.Internal.Exception
     Hedgehog.Internal.Gen
-    Hedgehog.Internal.Prelude
     Hedgehog.Internal.Property
     Hedgehog.Internal.Queue
     Hedgehog.Internal.Range

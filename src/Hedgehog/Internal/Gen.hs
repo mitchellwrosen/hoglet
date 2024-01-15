@@ -23,7 +23,7 @@
 
 module Hedgehog.Internal.Gen (
   -- * Transformer
-    Gen(..)
+    Gen
 
   -- ** Shrinking
   , shrink
@@ -124,7 +124,6 @@ module Hedgehog.Internal.Gen (
   , subsequence
   , subset
   , shuffle
-  , shuffleSeq
 
   -- * Sampling Generators
   , sample
@@ -132,37 +131,9 @@ module Hedgehog.Internal.Gen (
   , printTree
   , printWith
   , printTreeWith
-  , renderTree
-
-  -- * Internal
-  -- $internal
 
   -- ** Transfomer
-  , runGen
-  , evalGen
   , evalGenT
-  , mapGen
-  , generate
-  , toTree
-  , toTreeMaybeT
-  , fromTree
-  , fromTreeT
-  , fromTreeMaybeT
-
-  -- ** Size
-  , golden
-
-  -- ** Shrinking
-  , atLeast
-
-  -- ** Characters
-  , isSurrogate
-  , isNoncharacter
-
-  -- ** Subterms
-  , Vec(..)
-  , Nat(..)
-  , subtermMVec
   ) where
 
 #if !MIN_VERSION_base(4,18,0)
@@ -197,14 +168,16 @@ import qualified Data.Text as Text
 import qualified Data.Text.Encoding as Text
 import           Data.Word (Word8, Word16, Word32, Word64)
 
-import           Hedgehog.Internal.Prelude hiding (either, maybe, seq)
+import           Hedgehog.Internal.Range (Size, Range)
+import qualified Hedgehog.Internal.Range as Range
 import           Hedgehog.Internal.Seed (Seed)
 import qualified Hedgehog.Internal.Seed as Seed
 import qualified Hedgehog.Internal.Shrink as Shrink
 import           Hedgehog.Internal.Tree (Tree, TreeT(..), NodeT(..))
 import qualified Hedgehog.Internal.Tree as Tree
-import           Hedgehog.Range (Size, Range)
-import qualified Hedgehog.Range as Range
+
+import           Prelude hiding (either, filter, map, maybe, print, seq)
+
 
 ------------------------------------------------------------------------
 -- Generator transformer
@@ -212,9 +185,7 @@ import qualified Hedgehog.Range as Range
 -- | Generator for random values of @a@.
 --
 newtype Gen a =
-  Gen {
-      unGen :: Size -> Seed -> TreeT Maybe a
-    }
+  Gen (Size -> Seed -> TreeT Maybe a)
 
 -- | Runs a generator, producing its shrink tree.
 --
@@ -249,32 +220,10 @@ mapGen f gen =
 -- | Lift a predefined shrink tree in to a generator, ignoring the seed and the
 --   size.
 --
-fromTree :: Tree a -> Gen a
-fromTree =
-  fromTreeT .
-  hoist (Morph.generalize)
-
--- | Lift a predefined shrink tree in to a generator, ignoring the seed and the
---   size.
---
-fromTreeT :: Tree a -> Gen a
-fromTreeT x =
-  fromTreeMaybeT $
-    hoist (Just . runIdentity) x
-
--- | Lift a predefined shrink tree in to a generator, ignoring the seed and the
---   size.
---
 fromTreeMaybeT :: TreeT Maybe a -> Gen a
 fromTreeMaybeT x =
   Gen $ \_ _ ->
     x
-
--- | Observe a generator's shrink tree.
---
-toTree :: Gen a -> Gen (Tree a)
-toTree =
-  mapGen (Maybe.maybe empty pure . Tree.runTreeMaybe)
 
 -- | Lift a predefined shrink tree in to a generator, ignoring the seed and the
 --   size.
@@ -789,18 +738,6 @@ unicode =
 unicodeAll :: Gen Char
 unicodeAll =
   enumBounded
-
--- | Check if a character is in the surrogate category.
---
-isSurrogate :: Char -> Bool
-isSurrogate x =
-  x >= '\55296' && x <= '\57343'
-
--- | Check if a character is one of the noncharacters '\65534', '\65535'.
---
-isNoncharacter :: Char -> Bool
-isNoncharacter x =
-  x == '\65534' || x == '\65535'
 
 ------------------------------------------------------------------------
 -- Combinators - Strings
@@ -1586,12 +1523,3 @@ renderTree size seed gen =
       "<discard>"
     Just x ->
       Tree.render (fmap show x)
-
-------------------------------------------------------------------------
--- Internal
-
--- $internal
---
--- These functions are exported in case you need them in a pinch, but are not
--- part of the public API and may change at any time, even as part of a minor
--- update.
