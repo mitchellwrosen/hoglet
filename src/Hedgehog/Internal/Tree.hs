@@ -1,5 +1,4 @@
 {-# OPTIONS_HADDOCK not-home #-}
-{-# LANGUAGE CPP #-}
 module Hedgehog.Internal.Tree (
     Tree(..)
   , singleton
@@ -15,10 +14,6 @@ module Hedgehog.Internal.Tree (
 
   , render
   ) where
-
-#if !MIN_VERSION_base(4,18,0)
-import           Control.Applicative (liftA2)
-#endif
 
 import           Data.Functor.Classes (Show1(..), showsPrec1)
 import           Data.Functor.Classes (showsBinaryWith)

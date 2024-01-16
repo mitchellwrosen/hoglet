@@ -35,17 +35,6 @@ module Hedgehog.Internal.Seed (
   , split
   , nextInteger
   , nextDouble
-
-  -- * Internal
-  -- $internal
-  , goldenGamma
-  , nextWord64
-  , nextWord32
-  , mix64
-  , mix64variant13
-  , mix32
-  , mixGamma
-  , global
   ) where
 
 import           Control.Monad.IO.Class (MonadIO(..))
@@ -56,11 +45,12 @@ import           Data.Bits ((.|.), xor, shiftR, popCount)
 import           Data.Int (Int64)
 #else
 import           Data.Int (Int32)
+import           Data.Word (Word32)
 #endif
 import           Data.Time.Clock.POSIX (getPOSIXTime)
 import           Data.IORef (IORef)
 import qualified Data.IORef as IORef
-import           Data.Word (Word32, Word64)
+import           Data.Word (Word64)
 
 import           System.IO.Unsafe (unsafePerformIO)
 import           System.Random (RandomGen)
@@ -149,15 +139,6 @@ nextWord64 s0 =
   in
     (mix64 v0, s1)
 
--- | Generate a random 'Word32'.
---
-nextWord32 :: Seed -> (Word32, Seed)
-nextWord32 s0 =
-  let
-    (v0, s1) = next s0
-  in
-    (mix32 v0, s1)
-
 -- | Generate a random 'Integer' in the [inclusive,inclusive] range.
 --
 nextInteger :: Integer -> Integer -> Seed -> (Integer, Seed)
@@ -177,14 +158,6 @@ mix64 x =
     z = (y `xor` (y `shiftR` 33)) * 0xc4ceb9fe1a85ec53
   in
     z `xor` (z `shiftR` 33)
-
-mix32 :: Word64 -> Word32
-mix32 x =
-  let
-    y = (x `xor` (x `shiftR` 33)) * 0xff51afd7ed558ccd
-    z = (y `xor` (y `shiftR` 33)) * 0xc4ceb9fe1a85ec53
-  in
-    fromIntegral (z `shiftR` 32)
 
 mix64variant13 :: Word64 -> Word64
 mix64variant13 x =
@@ -209,6 +182,7 @@ mixGamma x =
 -- RandomGen instances
 
 #if (SIZEOF_HSINT == 8)
+
 instance RandomGen Seed where
   next =
     first fromIntegral . nextWord64
@@ -216,7 +190,24 @@ instance RandomGen Seed where
     (fromIntegral (minBound :: Int64), fromIntegral (maxBound :: Int64))
   split =
     split
+
 #else
+
+nextWord32 :: Seed -> (Word32, Seed)
+nextWord32 s0 =
+  let
+    (v0, s1) = next s0
+  in
+    (mix32 v0, s1)
+
+mix32 :: Word64 -> Word32
+mix32 x =
+  let
+    y = (x `xor` (x `shiftR` 33)) * 0xff51afd7ed558ccd
+    z = (y `xor` (y `shiftR` 33)) * 0xc4ceb9fe1a85ec53
+  in
+    fromIntegral (z `shiftR` 32)
+
 instance RandomGen Seed where
   next =
     first fromIntegral . nextWord32
@@ -224,13 +215,5 @@ instance RandomGen Seed where
     (fromIntegral (minBound :: Int32), fromIntegral (maxBound :: Int32))
   split =
     split
+
 #endif
-
-------------------------------------------------------------------------
--- Internal
-
--- $internal
---
--- These functions are exported in case you need them in a pinch, but are not
--- part of the public API and may change at any time, even as part of a minor
--- update.

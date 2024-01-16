@@ -1,5 +1,4 @@
 {-# OPTIONS_HADDOCK not-home #-}
-{-# LANGUAGE CPP #-}
 {-# LANGUAGE OverloadedStrings #-}
 module Hedgehog.Internal.Report (
   -- * Report
@@ -27,9 +26,6 @@ import qualified Data.List as List
 import           Data.Map (Map)
 import qualified Data.Map as Map
 import           Data.Maybe (mapMaybe, catMaybes)
-#if !MIN_VERSION_base(4,11,0)
-import qualified Data.Semigroup as Semigroup
-#endif
 import           Data.Text (Text)
 import qualified Data.Text as Text
 import           Data.Traversable (for)
@@ -55,9 +51,7 @@ import           System.Console.ANSI (ConsoleLayer(..), ConsoleIntensity(..))
 import           System.Console.ANSI (SGR(..), setSGRCode)
 import           System.Directory (makeRelativeToCurrentDirectory)
 
-#if mingw32_HOST_OS
 import           System.IO (hSetEncoding, stdout, stderr, utf8)
-#endif
 
 import           Text.PrettyPrint.Annotated.WL (Doc, (<#>), (<+>))
 import qualified Text.PrettyPrint.Annotated.WL as WL
@@ -125,9 +119,6 @@ data Summary =
     } deriving (Show)
 
 instance Monoid Summary where
-#if !MIN_VERSION_base(4,11,0)
-  mappend = (Semigroup.<>)
-#endif
   mempty =
     Summary 0 0 0 0 0
 
@@ -1191,11 +1182,9 @@ renderDoc color doc = do
         DisableColor ->
           WL.display
 
-#if mingw32_HOST_OS
   liftIO $ do
     hSetEncoding stdout utf8
     hSetEncoding stderr utf8
-#endif
 
   pure .
     display .

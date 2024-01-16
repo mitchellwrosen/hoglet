@@ -16,11 +16,12 @@ import qualified Control.Concurrent.STM.TVar as TVar
 import           Control.Monad.IO.Class (MonadIO(..))
 import           Data.Maybe (isJust)
 import           Data.Text (Text)
+import qualified Data.Text as Text
 
 import           Hedgehog.Internal.Config
 import           Hedgehog.Internal.Gen (runGen)
 import           Hedgehog.Internal.Property (DiscardCount(..), ShrinkCount(..))
-import           Hedgehog.Internal.Property (Group(..), GroupName(..))
+import           Hedgehog.Internal.Property (Group(..))
 import           Hedgehog.Internal.Property (Journal(..), Coverage(..), CoverCount(..))
 import           Hedgehog.Internal.Property (Property(..), PropertyConfig(..))
 import           Hedgehog.Internal.Property (Test, Failure(..), runTest)
@@ -40,9 +41,7 @@ import           Hedgehog.Internal.Tree (Tree(..))
 
 import           Prelude
 
-#if mingw32_HOST_OS
 import           System.IO (hSetEncoding, stdout, stderr, utf8)
-#endif
 
 -- | Configuration for a property test run.
 --
@@ -411,12 +410,10 @@ checkGroup config (Group group props) =
     -- our tests will saturate all the capabilities they're given.
     updateNumCapabilities (n + 2)
 
-#if mingw32_HOST_OS
     hSetEncoding stdout utf8
     hSetEncoding stderr utf8
-#endif
 
-    putStrLn $ "━━━ " ++ unGroupName group ++ " ━━━"
+    putStrLn $ "━━━ " ++ Text.unpack group ++ " ━━━"
 
     seed <- resolveSeed (runnerSeed config)
     verbosity <- resolveVerbosity (runnerVerbosity config)

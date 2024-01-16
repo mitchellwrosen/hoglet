@@ -28,7 +28,6 @@ module Hedgehog.Internal.Property (
 
   -- * Group
   , Group(..)
-  , GroupName(..)
   , PropertyCount(..)
 
   -- * TestT
@@ -399,22 +398,9 @@ shrinkPathDecompress str =
 --
 data Group =
   Group {
-      groupName :: !GroupName
+      groupName :: !Text
     , groupProperties :: ![(Text, Property)]
     }
-
--- | The name of a group of properties.
---
---   Should be constructed using `OverloadedStrings`:
---
--- @
---   "fruit" :: GroupName
--- @
---
-newtype GroupName =
-  GroupName {
-      unGroupName :: String
-    } deriving (Eq, Ord, Show, IsString, Semigroup)
 
 -- | The number of properties in a group.
 --

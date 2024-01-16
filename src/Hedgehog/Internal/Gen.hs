@@ -1,5 +1,4 @@
 {-# OPTIONS_HADDOCK not-home #-}
-{-# LANGUAGE CPP #-}
 {-# LANGUAGE DataKinds #-}
 module Hedgehog.Internal.Gen (
   -- * Transformer
@@ -111,9 +110,6 @@ module Hedgehog.Internal.Gen (
   , printTreeWith
   ) where
 
-#if !MIN_VERSION_base(4,18,0)
-import           Control.Applicative (liftA2)
-#endif
 import           Control.Applicative (Alternative(..))
 import           Control.Monad (filterM, guard, join, replicateM)
 import           Control.Monad.IO.Class (MonadIO(..))
@@ -129,7 +125,6 @@ import qualified Data.List.NonEmpty as NonEmpty
 import           Data.Map (Map)
 import qualified Data.Map as Map
 import qualified Data.Maybe as Maybe
-import qualified Data.Semigroup as Semigroup
 import           Data.Sequence (Seq)
 import qualified Data.Sequence as Seq
 import           Data.Set (Set)
@@ -191,21 +186,12 @@ toTreeMaybeT =
 -- Gen instances
 
 instance (Semigroup a) => Semigroup (Gen a) where
-  (<>) =
-    liftA2 (Semigroup.<>)
+  x <> y =
+    (<>) <$> x <*> y
 
-instance (
-  Monoid a
-#if !MIN_VERSION_base(4,11,0)
-  , Semigroup a
-#endif
-         ) => Monoid (Gen a) where
-#if !MIN_VERSION_base(4,11,0)
-  mappend = (Semigroup.<>)
-#endif
-
+instance (Monoid a) => Monoid (Gen a) where
   mempty =
-    return mempty
+    pure mempty
 
 --
 -- implementation: parallel shrinking
@@ -251,7 +237,7 @@ instance MonadFail Gen where
 
 instance Alternative Gen where
   empty =
-    fromTreeMaybeT empty
+    discard
 
   x <|> y =
     Gen $ \size seed ->
@@ -853,7 +839,7 @@ recursive f nonrec rec =
 --
 discard :: Gen a
 discard =
-  empty
+  fromTreeMaybeT Nothing
 
 -- | Discards the generator if the generated value does not satisfy the
 --   predicate.
@@ -1235,7 +1221,6 @@ shuffleSeq xs =
     pure Seq.empty
   else do
     n <- integral $ Range.constant 0 (length xs - 1)
-#if MIN_VERSION_containers(0,5,8)
     -- Data.Sequence should offer a version of deleteAt that returns the
     -- deleted element, but it does not currently do so. Lookup followed
     -- by deletion seems likely faster than splitting and then appending,
@@ -1246,15 +1231,6 @@ shuffleSeq xs =
         (y Seq.<|) <$> shuffleSeq (Seq.deleteAt n xs)
       Nothing ->
         error "Hedgehog.Gen.shuffleSeq: internal error, lookup in empty sequence"
-#else
-    case Seq.splitAt n xs of
-      (beginning, end) ->
-        case Seq.viewl end of
-          y Seq.:< end' ->
-            (y Seq.<|) <$> shuffleSeq (beginning Seq.>< end')
-          Seq.EmptyL ->
-            error "Hedgehog.Gen.shuffleSeq: internal error, lookup in empty sequence"
-#endif
 
 ------------------------------------------------------------------------
 -- Sampling
