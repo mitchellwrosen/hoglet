@@ -1,12 +1,12 @@
 {-# OPTIONS_HADDOCK not-home #-}
-module Hedgehog.Internal.Exception (
-    tryEvaluate
-  ) where
 
-import           Control.Exception (Exception(..), AsyncException, SomeException(..), catch, evaluate, throwIO)
+module Hedgehog.Internal.Exception
+  ( tryEvaluate,
+  )
+where
 
-import           System.IO.Unsafe (unsafePerformIO)
-
+import Control.Exception (AsyncException, Exception (..), SomeException (..), catch, evaluate, throwIO)
+import System.IO.Unsafe (unsafePerformIO)
 
 tryAll :: IO a -> IO (Either SomeException a)
 tryAll m =

@@ -1,60 +1,49 @@
 {-# OPTIONS_HADDOCK not-home #-}
-module Hedgehog.Internal.Config (
-    UseColor(..)
 
-  , Seed(..)
-  , resolveSeed
+module Hedgehog.Internal.Config
+  ( UseColor (..),
+    Seed (..),
+    resolveSeed,
+    Verbosity (..),
+    WorkerCount (..),
+    Skip (..),
+    resolveSkip,
+    detectColor,
+    detectSeed,
+    detectWorkers,
+    detectVerbosity,
+  )
+where
 
-  , Verbosity(..)
-
-  , WorkerCount(..)
-
-  , Skip(..)
-  , resolveSkip
-
-  , detectColor
-  , detectSeed
-  , detectWorkers
-  , detectVerbosity
-  ) where
-
-import qualified Data.Text as Text
-
-import qualified GHC.Conc as Conc
-
-import           Hedgehog.Internal.Seed (Seed(..))
-import qualified Hedgehog.Internal.Seed as Seed
-import           Hedgehog.Internal.Property (Skip(..), skipDecompress)
-
-import           System.Console.ANSI (hSupportsANSI)
-import           System.Environment (lookupEnv)
-import           System.IO (stdout)
-
-import           Text.Read (readMaybe)
-
+import Data.Text qualified as Text
+import GHC.Conc qualified as Conc
+import Hedgehog.Internal.Property (Skip (..), skipDecompress)
+import Hedgehog.Internal.Seed (Seed (..))
+import Hedgehog.Internal.Seed qualified as Seed
+import System.Console.ANSI (hSupportsANSI)
+import System.Environment (lookupEnv)
+import System.IO (stdout)
+import Text.Read (readMaybe)
 
 -- | Whether to render output using ANSI colors or not.
---
-data UseColor =
+data UseColor
+  = -- | Disable ANSI colors in report output.
     DisableColor
-    -- ^ Disable ANSI colors in report output.
-  | EnableColor
-    -- ^ Enable ANSI colors in report output.
-    deriving (Eq, Ord, Show)
+  | -- | Enable ANSI colors in report output.
+    EnableColor
+  deriving (Eq, Ord, Show)
 
 -- | How verbose should the report output be.
---
-data Verbosity =
+data Verbosity
+  = -- | Only display the summary of the test run.
     Quiet
-    -- ^ Only display the summary of the test run.
-  | Normal
-    -- ^ Display each property as it is running, as well as the summary.
-    deriving (Eq, Ord, Show)
+  | -- | Display each property as it is running, as well as the summary.
+    Normal
+  deriving (Eq, Ord, Show)
 
 -- | The number of workers to use when running properties in parallel.
---
-newtype WorkerCount =
-  WorkerCount Int
+newtype WorkerCount
+  = WorkerCount Int
   deriving (Eq, Ord, Show, Num, Enum, Real, Integral)
 
 detectMark :: IO Bool
@@ -72,14 +61,12 @@ lookupBool key = do
       pure $ Just False
     Just "false" ->
       pure $ Just False
-
     Just "1" ->
       pure $ Just True
     Just "yes" ->
       pure $ Just True
     Just "true" ->
       pure $ Just True
-
     _ ->
       pure Nothing
 
@@ -89,20 +76,17 @@ detectColor = do
   case ok of
     Just False ->
       pure DisableColor
-
     Just True ->
       pure EnableColor
-
     Nothing -> do
       mth <- detectMark
-      if mth then
-        pure DisableColor -- avoid getting fired :)
-      else do
-        enable <- hSupportsANSI stdout
-        if enable then
-          pure EnableColor
-        else
-          pure DisableColor
+      if mth
+        then pure DisableColor -- avoid getting fired :)
+        else do
+          enable <- hSupportsANSI stdout
+          if enable
+            then pure EnableColor
+            else pure DisableColor
 
 splitOn :: String -> String -> [String]
 splitOn needle haystack =
@@ -131,16 +115,13 @@ detectVerbosity = do
   case menv of
     Just (0 :: Int) ->
       pure Quiet
-
     Just (1 :: Int) ->
       pure Normal
-
     _ -> do
       mth <- detectMark
-      if mth then
-        pure Quiet
-      else
-        pure Normal
+      if mth
+        then pure Quiet
+        else pure Normal
 
 detectWorkers :: IO WorkerCount
 detectWorkers = do

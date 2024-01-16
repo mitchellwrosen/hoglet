@@ -1,32 +1,33 @@
 {-# OPTIONS_HADDOCK not-home #-}
-module Hedgehog.Internal.Source (
-    LineNo(..)
-  , ColumnNo(..)
-  , Span(..)
-  , getCaller
-  ) where
 
-import GHC.Stack (CallStack, SrcLoc(..), getCallStack)
+module Hedgehog.Internal.Source
+  ( LineNo (..),
+    ColumnNo (..),
+    Span (..),
+    getCaller,
+  )
+where
 
+import GHC.Stack (CallStack, SrcLoc (..), getCallStack)
 
-newtype LineNo =
-  LineNo {
-      unLineNo :: Int
-    } deriving (Eq, Ord, Num, Enum, Real, Integral)
+newtype LineNo = LineNo
+  { unLineNo :: Int
+  }
+  deriving (Eq, Ord, Num, Enum, Real, Integral)
 
-newtype ColumnNo =
-  ColumnNo {
-      unColumnNo :: Int
-    } deriving (Eq, Ord, Num, Enum, Real, Integral)
+newtype ColumnNo = ColumnNo
+  { unColumnNo :: Int
+  }
+  deriving (Eq, Ord, Num, Enum, Real, Integral)
 
-data Span =
-  Span {
-      spanFile :: !FilePath
-    , spanStartLine :: !LineNo
-    , spanStartColumn :: !ColumnNo
-    , spanEndLine :: !LineNo
-    , spanEndColumn :: !ColumnNo
-    } deriving (Eq, Ord)
+data Span = Span
+  { spanFile :: !FilePath,
+    spanStartLine :: !LineNo,
+    spanStartColumn :: !ColumnNo,
+    spanEndLine :: !LineNo,
+    spanEndColumn :: !ColumnNo
+  }
+  deriving (Eq, Ord)
 
 getCaller :: CallStack -> Maybe Span
 getCaller stack =
@@ -34,12 +35,13 @@ getCaller stack =
     [] ->
       Nothing
     (_, x) : _ ->
-      Just $ Span
-        (srcLocFile x)
-        (fromIntegral $ srcLocStartLine x)
-        (fromIntegral $ srcLocStartCol x)
-        (fromIntegral $ srcLocEndLine x)
-        (fromIntegral $ srcLocEndCol x)
+      Just $
+        Span
+          (srcLocFile x)
+          (fromIntegral $ srcLocStartLine x)
+          (fromIntegral $ srcLocStartCol x)
+          (fromIntegral $ srcLocEndLine x)
+          (fromIntegral $ srcLocEndCol x)
 
 ------------------------------------------------------------------------
 -- Show instances
@@ -47,25 +49,25 @@ getCaller stack =
 instance Show Span where
   showsPrec p (Span file sl sc el ec) =
     showParen (p > 10) $
-      showString "Span " .
-      showsPrec 11 file .
-      showChar ' ' .
-      showsPrec 11 sl .
-      showChar ' ' .
-      showsPrec 11 sc .
-      showChar ' ' .
-      showsPrec 11 el .
-      showChar ' ' .
-      showsPrec 11 ec
+      showString "Span "
+        . showsPrec 11 file
+        . showChar ' '
+        . showsPrec 11 sl
+        . showChar ' '
+        . showsPrec 11 sc
+        . showChar ' '
+        . showsPrec 11 el
+        . showChar ' '
+        . showsPrec 11 ec
 
 instance Show LineNo where
   showsPrec p (LineNo x) =
     showParen (p > 10) $
-      showString "LineNo " .
-      showsPrec 11 x
+      showString "LineNo "
+        . showsPrec 11 x
 
 instance Show ColumnNo where
   showsPrec p (ColumnNo x) =
     showParen (p > 10) $
-      showString "ColumnNo " .
-      showsPrec 11 x
+      showString "ColumnNo "
+        . showsPrec 11 x

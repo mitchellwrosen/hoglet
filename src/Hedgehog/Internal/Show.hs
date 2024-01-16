@@ -1,96 +1,85 @@
 {-# OPTIONS_HADDOCK not-home #-}
-module Hedgehog.Internal.Show (
-    Name
-  , Value(..)
-  , ValueDiff(..)
-  , LineDiff(..)
 
-  , mkValue
-  , showPretty
+module Hedgehog.Internal.Show
+  ( Name,
+    Value (..),
+    ValueDiff (..),
+    LineDiff (..),
+    mkValue,
+    showPretty,
+    valueDiff,
+    toLineDiff,
+  )
+where
 
-  , valueDiff
-  , toLineDiff
-  ) where
+import Data.Bifunctor (second)
+import Text.Show.Pretty (Name, Value (..), ppShow, reify, valToStr)
 
-import           Data.Bifunctor (second)
-
-import           Text.Show.Pretty (Value(..), Name, reify, valToStr, ppShow)
-
-
-data ValueDiff =
-    ValueCon Name [ValueDiff]
+data ValueDiff
+  = ValueCon Name [ValueDiff]
   | ValueRec Name [(Name, ValueDiff)]
   | ValueTuple [ValueDiff]
   | ValueList [ValueDiff]
   | ValueSame Value
   | ValueDiff Value Value
-    deriving (Eq, Show)
+  deriving (Eq, Show)
 
-data LineDiff =
-    LineSame String
+data LineDiff
+  = LineSame String
   | LineRemoved String
   | LineAdded String
-    deriving (Eq, Show)
+  deriving (Eq, Show)
 
-data DocDiff =
-    DocSame Int String
+data DocDiff
+  = DocSame Int String
   | DocRemoved Int String
   | DocAdded Int String
   | DocOpen Int String
   | DocItem Int String [DocDiff]
   | DocClose Int String
-    deriving (Eq, Show)
+  deriving (Eq, Show)
 
 renderValue :: Value -> String
 renderValue =
   valToStr
 
-mkValue :: Show a => a -> Maybe Value
+mkValue :: (Show a) => a -> Maybe Value
 mkValue =
   reify
 
-showPretty :: Show a => a -> String
+showPretty :: (Show a) => a -> String
 showPretty =
   ppShow
 
 toLineDiff :: ValueDiff -> [LineDiff]
 toLineDiff =
-  concatMap (mkLineDiff 0 "") .
-  collapseOpen .
-  dropLeadingSep .
-  mkDocDiff 0
+  concatMap (mkLineDiff 0 "")
+    . collapseOpen
+    . dropLeadingSep
+    . mkDocDiff 0
 
 valueDiff :: Value -> Value -> ValueDiff
 valueDiff x y =
-  if x == y then
-    ValueSame x
-  else
-    case (x, y) of
+  if x == y
+    then ValueSame x
+    else case (x, y) of
       (Con nx xs, Con ny ys)
-        | nx == ny
-        , length xs == length ys
-        ->
-          ValueCon nx (zipWith valueDiff xs ys)
-
+        | nx == ny,
+          length xs == length ys ->
+            ValueCon nx (zipWith valueDiff xs ys)
       (Rec nx nxs, Rec ny nys)
-        | nx == ny
-        , fmap fst nxs == fmap fst nys
-        , ns <- fmap fst nxs
-        , xs <- fmap snd nxs
-        , ys <- fmap snd nys
-        ->
-          ValueRec nx (zip ns (zipWith valueDiff xs ys))
-
+        | nx == ny,
+          fmap fst nxs == fmap fst nys,
+          ns <- fmap fst nxs,
+          xs <- fmap snd nxs,
+          ys <- fmap snd nys ->
+            ValueRec nx (zip ns (zipWith valueDiff xs ys))
       (Tuple xs, Tuple ys)
-        | length xs == length ys
-        ->
-          ValueTuple (zipWith valueDiff xs ys)
-
+        | length xs == length ys ->
+            ValueTuple (zipWith valueDiff xs ys)
       (List xs, List ys)
-        | length xs == length ys
-        ->
-          ValueList (zipWith valueDiff xs ys)
-
+        | length xs == length ys ->
+            ValueList (zipWith valueDiff xs ys)
       _ ->
         ValueDiff x y
 
@@ -126,40 +115,31 @@ takeRight = \case
 
 mkLineDiff :: Int -> String -> DocDiff -> [LineDiff]
 mkLineDiff indent0 prefix0 diff =
-  let
-    mkLinePrefix indent =
-      spaces indent0 ++ prefix0 ++ spaces indent
+  let mkLinePrefix indent =
+        spaces indent0 ++ prefix0 ++ spaces indent
 
-    mkLineIndent indent =
-      indent0 + length prefix0 + indent
-  in
-    case diff of
-      DocSame indent x ->
-        [LineSame $ mkLinePrefix indent ++ x]
-
-      DocRemoved indent x ->
-        [LineRemoved $ mkLinePrefix indent ++ x]
-
-      DocAdded indent x ->
-        [LineAdded $ mkLinePrefix indent ++ x]
-
-      DocOpen indent x ->
-        [LineSame $ mkLinePrefix indent ++ x]
-
-      DocItem _ _ [] ->
-        []
-
-      DocItem indent prefix (x@DocRemoved{} : y@DocAdded{} : xs) ->
-        mkLineDiff (mkLineIndent indent) prefix x ++
-        mkLineDiff (mkLineIndent indent) prefix y ++
-        concatMap (mkLineDiff (mkLineIndent (indent + length prefix)) "") xs
-
-      DocItem indent prefix (x : xs) ->
-        mkLineDiff (mkLineIndent indent) prefix x ++
-        concatMap (mkLineDiff (mkLineIndent (indent + length prefix)) "") xs
-
-      DocClose indent x ->
-        [LineSame $ spaces (mkLineIndent indent) ++ x]
+      mkLineIndent indent =
+        indent0 + length prefix0 + indent
+   in case diff of
+        DocSame indent x ->
+          [LineSame $ mkLinePrefix indent ++ x]
+        DocRemoved indent x ->
+          [LineRemoved $ mkLinePrefix indent ++ x]
+        DocAdded indent x ->
+          [LineAdded $ mkLinePrefix indent ++ x]
+        DocOpen indent x ->
+          [LineSame $ mkLinePrefix indent ++ x]
+        DocItem _ _ [] ->
+          []
+        DocItem indent prefix (x@DocRemoved {} : y@DocAdded {} : xs) ->
+          mkLineDiff (mkLineIndent indent) prefix x
+            ++ mkLineDiff (mkLineIndent indent) prefix y
+            ++ concatMap (mkLineDiff (mkLineIndent (indent + length prefix)) "") xs
+        DocItem indent prefix (x : xs) ->
+          mkLineDiff (mkLineIndent indent) prefix x
+            ++ concatMap (mkLineDiff (mkLineIndent (indent + length prefix)) "") xs
+        DocClose indent x ->
+          [LineSame $ spaces (mkLineIndent indent) ++ x]
 
 spaces :: Int -> String
 spaces indent =
@@ -191,39 +171,32 @@ mkDocDiff :: Int -> ValueDiff -> [DocDiff]
 mkDocDiff indent = \case
   ValueSame x ->
     same indent (renderValue x)
-
   diff
-    | x <- takeLeft diff
-    , y <- takeRight diff
-    , oneLiner x
-    , oneLiner y
-    ->
-      removed indent (renderValue x) ++
-      added indent (renderValue y)
-
+    | x <- takeLeft diff,
+      y <- takeRight diff,
+      oneLiner x,
+      oneLiner y ->
+        removed indent (renderValue x)
+          ++ added indent (renderValue y)
   ValueCon n xs ->
-    same indent n ++
-    concatMap (mkDocDiff (indent + 2)) xs
-
+    same indent n
+      ++ concatMap (mkDocDiff (indent + 2)) xs
   ValueRec n nxs ->
-    same indent n ++
-    [DocOpen indent "{"] ++
-    fmap (\(name, x) -> DocItem (indent + 2) ", " (same 0 (name ++ " =") ++ mkDocDiff 2 x)) nxs ++
-    [DocClose (indent + 2) "}"]
-
+    same indent n
+      ++ [DocOpen indent "{"]
+      ++ fmap (\(name, x) -> DocItem (indent + 2) ", " (same 0 (name ++ " =") ++ mkDocDiff 2 x)) nxs
+      ++ [DocClose (indent + 2) "}"]
   ValueTuple xs ->
-    [DocOpen indent "("] ++
-    fmap (DocItem indent ", " . mkDocDiff 0) xs ++
-    [DocClose indent ")"]
-
+    [DocOpen indent "("]
+      ++ fmap (DocItem indent ", " . mkDocDiff 0) xs
+      ++ [DocClose indent ")"]
   ValueList xs ->
-    [DocOpen indent "["] ++
-    fmap (DocItem indent ", " . mkDocDiff 0) xs ++
-    [DocClose indent "]"]
-
+    [DocOpen indent "["]
+      ++ fmap (DocItem indent ", " . mkDocDiff 0) xs
+      ++ [DocClose indent "]"]
   ValueDiff x y ->
-    removed indent (renderValue x) ++
-    added indent (renderValue y)
+    removed indent (renderValue x)
+      ++ added indent (renderValue y)
 
 oneLiner :: Value -> Bool
 oneLiner x =

@@ -1,32 +1,28 @@
 {-# OPTIONS_HADDOCK not-home #-}
-module Hedgehog.Internal.Tree (
-    Tree(..)
-  , singleton
-  , zipTreeT
-  , treeValue
 
-  , expand
-  , prune
+module Hedgehog.Internal.Tree
+  ( Tree (..),
+    singleton,
+    zipTreeT,
+    treeValue,
+    expand,
+    prune,
+    consChild,
+    mapMaybe,
+    interleave,
+    render,
+  )
+where
 
-  , consChild
-  , mapMaybe
-  , interleave
-
-  , render
-  ) where
-
-import           Data.Functor.Classes (Show1(..), showsPrec1)
-import           Data.Functor.Classes (showsBinaryWith)
-import qualified Data.List as List
-
-import           Prelude hiding (filter)
+import Data.Functor.Classes (Show1 (..), showsBinaryWith, showsPrec1)
+import Data.List qualified as List
+import Prelude hiding (filter)
 
 ------------------------------------------------------------------------
 
 -- | A rose tree.
---
-data Tree a =
-  Tree a [Tree a]
+data Tree a
+  = Tree a [Tree a]
   deriving stock (Eq, Foldable, Functor, Traversable)
 
 treeValue :: Tree a -> a
@@ -42,19 +38,16 @@ singleton =
   pure
 
 -- | Create a tree from a value and an unfolding function.
---
 unfold :: (a -> [a]) -> a -> Tree a
 unfold f x =
   Tree x (unfoldForest f x)
 
 -- | Create a forest from a value and an unfolding function.
---
 unfoldForest :: (a -> [a]) -> a -> [Tree a]
 unfoldForest f =
   fmap (unfold f) . f
 
 -- | Expand a tree using an unfolding function.
---
 expand :: (a -> [a]) -> Tree a -> Tree a
 expand f (Tree x xs) =
   Tree x (map (expand f) xs ++ unfoldForest f x)
@@ -62,13 +55,11 @@ expand f (Tree x xs) =
 -- | Throw away all but the top @n@ levels of a tree's children.
 --
 --   /@prune 0@ will throw away all of a tree's children./
---
 prune :: Int -> Tree a -> Tree a
 prune n (Tree x xs) =
-  if n <= 0 then
-    Tree x []
-  else
-    Tree x (map (prune (n - 1)) xs)
+  if n <= 0
+    then Tree x []
+    else Tree x (map (prune (n - 1)) xs)
 
 mapMaybe :: (a -> Maybe b) -> Tree a -> Maybe (Tree b)
 mapMaybe p (Tree x xs) = do
@@ -76,20 +67,18 @@ mapMaybe p (Tree x xs) = do
 
 flattenTree :: (a -> Maybe b) -> Tree a -> [Tree b]
 flattenTree p (Tree x ys0) =
-  let
-    ys =
-      flattenForest p ys0
-  in
-    case p x of
-      Just x' ->
-        [Tree x' ys]
-      Nothing ->
-        ys
+  let ys =
+        flattenForest p ys0
+   in case p x of
+        Just x' ->
+          [Tree x' ys]
+        Nothing ->
+          ys
 
 flattenForest :: (a -> Maybe b) -> [Tree a] -> [Tree b]
 flattenForest =
-  concatMap .
-  flattenTree
+  concatMap
+    . flattenTree
 
 consChild :: a -> Tree a -> Tree a
 consChild a (Tree x xs) =
@@ -105,16 +94,13 @@ consChild a (Tree x xs) =
 --   , ([1], 2, [3])
 --   , ([1, 2], 3, [])
 --   ]
---
 splits :: [a] -> [([a], a, [a])]
 splits xs0 =
-  let
-    go (front : fronts) (x : xs) =
-      (front, x, xs) : go fronts xs
-    go _ _ =
-      []
-  in
-    go (List.inits xs0) xs0
+  let go (front : fronts) (x : xs) =
+        (front, x, xs) : go fronts xs
+      go _ _ =
+        []
+   in go (List.inits xs0) xs0
 
 -- | @removes n@ computes all ways we can remove chunks of size @n@ from a list
 --
@@ -137,7 +123,7 @@ removes k = \xs -> go xs
 
 dropSome :: [Tree a] -> [Tree [a]]
 dropSome ts = do
-  n   <- takeWhile (> 0) $ iterate (`div` 2) (length ts)
+  n <- takeWhile (> 0) $ iterate (`div` 2) (length ts)
   ts' <- removes n ts
   [interleave ts']
 
@@ -150,9 +136,9 @@ shrinkOne ts = do
 interleave :: [Tree a] -> Tree [a]
 interleave ts =
   Tree (fmap treeValue ts) $
-    concat [
-        dropSome ts
-      , shrinkOne ts
+    concat
+      [ dropSome ts,
+        shrinkOne ts
       ]
 
 ------------------------------------------------------------------------
@@ -178,9 +164,9 @@ instance Monad Tree where
 zipTreeT :: forall a b. Tree a -> Tree b -> Tree (a, b)
 zipTreeT l0@(Tree a ls) r0@(Tree b rs) =
   Tree (a, b) $
-    concat [
-        [zipTreeT l1 r0 | l1 <- ls]
-      , [zipTreeT l0 r1 | r1 <- rs]
+    concat
+      [ [zipTreeT l1 r0 | l1 <- ls],
+        [zipTreeT l0 r1 | r1 <- rs]
       ]
 
 ------------------------------------------------------------------------
@@ -192,17 +178,15 @@ instance (Show a) => Show (Tree a) where
 
 instance Show1 Tree where
   liftShowsPrec sp sl d (Tree x xs) =
-    let
-      sp1 =
-        liftShowsPrec sp sl
+    let sp1 =
+          liftShowsPrec sp sl
 
-      sl1 =
-        liftShowList sp sl
+        sl1 =
+          liftShowList sp sl
 
-      sp2 =
-        liftShowsPrec sp1 sl1
-    in
-      showsBinaryWith sp sp2 "Tree" d x xs
+        sp2 =
+          liftShowsPrec sp1 sl1
+     in showsBinaryWith sp sp2 "Tree" d x xs
 
 ------------------------------------------------------------------------
 -- Pretty Printing
@@ -225,22 +209,17 @@ renderNodeT xs =
 
 renderForestLines :: [Tree String] -> [String]
 renderForestLines xs0 =
-  let
-    shift hd other =
-      zipWith (++) (hd : repeat other)
-  in
-    case xs0 of
-      [] ->
-        []
-
-      [x] ->
-        shift " └╼" "   " (renderTreeTLines x)
-
-      x : xs ->
-        shift " ├╼" " │ " (renderTreeTLines x) ++ (renderForestLines xs)
+  let shift hd other =
+        zipWith (++) (hd : repeat other)
+   in case xs0 of
+        [] ->
+          []
+        [x] ->
+          shift " └╼" "   " (renderTreeTLines x)
+        x : xs ->
+          shift " ├╼" " │ " (renderTreeTLines x) ++ (renderForestLines xs)
 
 -- | Render a tree of strings.
---
 render :: Tree String -> String
 render =
   unlines . renderTreeTLines

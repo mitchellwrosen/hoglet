@@ -1,14 +1,14 @@
 {-# OPTIONS_HADDOCK not-home #-}
-module Hedgehog.Internal.Tripping (
-    tripping
-  ) where
 
-import           Control.Monad (when)
-import           GHC.Stack (HasCallStack, withFrozenCallStack)
+module Hedgehog.Internal.Tripping
+  ( tripping,
+  )
+where
 
-import           Hedgehog.Internal.Property (Test, Diff(..), failWith)
-import           Hedgehog.Internal.Show (valueDiff, mkValue, showPretty)
-
+import Control.Monad (when)
+import GHC.Stack (HasCallStack, withFrozenCallStack)
+import Hedgehog.Internal.Property (Diff (..), Test, failWith)
+import Hedgehog.Internal.Show (mkValue, showPretty, valueDiff)
 
 -- | Test that a pair of encode / decode functions are compatible.
 --
@@ -24,41 +24,40 @@ import           Hedgehog.Internal.Show (valueDiff, mkValue, showPretty)
 -- trippingShowRead a = tripping a show readEither
 -- @
 tripping ::
-     (Applicative f, Show b, Show (f a), Eq (f a), HasCallStack)
-  => a
-  -> (a -> b)
-  -> (b -> f a)
-  -> Test ()
+  (Applicative f, Show b, Show (f a), Eq (f a), HasCallStack) =>
+  a ->
+  (a -> b) ->
+  (b -> f a) ->
+  Test ()
 tripping x encode decode =
-  let
-    mx =
-      pure x
+  let mx =
+        pure x
 
-    i =
-      encode x
+      i =
+        encode x
 
-    my =
-      decode i
-  in
-    when (mx /= my) $ do
-      case valueDiff <$> mkValue mx <*> mkValue my of
-        Nothing ->
-          withFrozenCallStack $
-            failWith Nothing $ unlines [
-                "━━━ Original ━━━"
-              , showPretty mx
-              , "━━━ Intermediate ━━━"
-              , showPretty i
-              , "━━━ Roundtrip ━━━"
-              , showPretty my
-              ]
-
-        Just diff ->
-          withFrozenCallStack $
-            failWith
-              (Just $
-                Diff "━━━ " "- Original" ") (" "+ Roundtrip" " ━━━" diff) $
-              unlines [
-                  "━━━ Intermediate ━━━"
-                , showPretty i
+      my =
+        decode i
+   in when (mx /= my) $ do
+        case valueDiff <$> mkValue mx <*> mkValue my of
+          Nothing ->
+            withFrozenCallStack $
+              failWith Nothing $
+                unlines
+                  [ "━━━ Original ━━━",
+                    showPretty mx,
+                    "━━━ Intermediate ━━━",
+                    showPretty i,
+                    "━━━ Roundtrip ━━━",
+                    showPretty my
+                  ]
+          Just diff ->
+            withFrozenCallStack
+              $ failWith
+                ( Just $
+                    Diff "━━━ " "- Original" ") (" "+ Roundtrip" " ━━━" diff
+                )
+              $ unlines
+                [ "━━━ Intermediate ━━━",
+                  showPretty i
                 ]

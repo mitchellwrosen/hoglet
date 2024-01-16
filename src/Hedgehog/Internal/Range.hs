@@ -1,39 +1,40 @@
 {-# OPTIONS_HADDOCK not-home #-}
-module Hedgehog.Internal.Range (
-  -- * Size
-    Size(..)
 
-  -- * Range
-  , Range(..)
-  , origin
-  , bounds
-  , lowerBound
-  , upperBound
+module Hedgehog.Internal.Range
+  ( -- * Size
+    Size (..),
 
-  -- * Constant
-  , singleton
-  , constant
-  , constantFrom
-  , constantBounded
+    -- * Range
+    Range (..),
+    origin,
+    bounds,
+    lowerBound,
+    upperBound,
 
-  -- * Linear
-  , linear
-  , linearFrom
-  , linearFrac
-  , linearFracFrom
-  , linearBounded
+    -- * Constant
+    singleton,
+    constant,
+    constantFrom,
+    constantBounded,
 
-  -- * Exponential
-  , exponential
-  , exponentialFrom
-  , exponentialBounded
-  , exponentialFloat
-  , exponentialFloatFrom
-  ) where
+    -- * Linear
+    linear,
+    linearFrom,
+    linearFrac,
+    linearFracFrom,
+    linearBounded,
 
-import           Data.Bifunctor (bimap)
+    -- * Exponential
+    exponential,
+    exponentialFrom,
+    exponentialBounded,
+    exponentialFloat,
+    exponentialFloatFrom,
+  )
+where
 
-import           Prelude hiding (minimum, maximum)
+import Data.Bifunctor (bimap)
+import Prelude hiding (maximum, minimum)
 
 -- $setup
 -- >>> import Data.Int (Int8)
@@ -42,17 +43,16 @@ import           Prelude hiding (minimum, maximum)
 -- | Tests are parameterized by the size of the randomly-generated data. The
 --   meaning of a 'Size' value depends on the particular generator used, but
 --   it must always be a number between 0 and 99 inclusive.
---
-newtype Size =
-  Size {
-      unSize :: Int
-    } deriving (Eq, Ord, Num, Real, Enum, Integral)
+newtype Size = Size
+  { unSize :: Int
+  }
+  deriving (Eq, Ord, Num, Real, Enum, Integral)
 
 instance Show Size where
   showsPrec p (Size x) =
     showParen (p > 10) $
-      showString "Size " .
-      showsPrec 11 x
+      showString "Size "
+        . showsPrec 11 x
 
 instance Read Size where
   readsPrec p =
@@ -67,9 +67,8 @@ instance Read Size where
 --   The constructor takes an origin between the lower and upper bound, and a
 --   function from 'Size' to bounds.  As the size goes towards @0@, the values
 --   go towards the origin.
---
-data Range a =
-  Range !a (Size -> (a, a))
+data Range a
+  = Range !a (Size -> (a, a))
 
 instance Functor Range where
   fmap f (Range z g) =
@@ -84,36 +83,28 @@ instance Functor Range where
 --
 --   When using a 'Range' to generate numbers, the shrinking function will
 --   shrink towards the origin.
---
 origin :: Range a -> a
 origin (Range z _) =
   z
 
 -- | Get the extents of a range, for a given size.
---
 bounds :: Size -> Range a -> (a, a)
 bounds sz (Range _ f) =
   f sz
 
 -- | Get the lower bound of a range for the given size.
---
-lowerBound :: Ord a => Size -> Range a -> a
+lowerBound :: (Ord a) => Size -> Range a -> a
 lowerBound sz range =
-  let
-    (x, y) =
-      bounds sz range
-  in
-    min x y
+  let (x, y) =
+        bounds sz range
+   in min x y
 
 -- | Get the upper bound of a range for the given size.
---
-upperBound :: Ord a => Size -> Range a -> a
+upperBound :: (Ord a) => Size -> Range a -> a
 upperBound sz range =
-  let
-    (x, y) =
-      bounds sz range
-  in
-    max x y
+  let (x, y) =
+        bounds sz range
+   in max x y
 
 -- | Construct a range which represents a constant single value.
 --
@@ -122,7 +113,6 @@ upperBound sz range =
 --
 --   >>> origin $ singleton 5
 --   5
---
 singleton :: a -> Range a
 singleton x =
   Range x $ \_ -> (x, x)
@@ -136,7 +126,6 @@ singleton x =
 --
 --   >>> origin $ constant 0 10
 --   0
---
 constant :: a -> a -> Range a
 constant x y =
   constantFrom x x y
@@ -159,12 +148,14 @@ constant x y =
 --
 --   >>> origin $ constantFrom 2000 1970 2100
 --   2000
---
 constantFrom ::
-     a -- ^ Origin (the value produced when the size parameter is 0).
-  -> a -- ^ Lower bound (the bottom of the range when the size parameter is 99).
-  -> a -- ^ Upper bound (the top of the range when the size parameter is 99).
-  -> Range a
+  -- | Origin (the value produced when the size parameter is 0).
+  a ->
+  -- | Lower bound (the bottom of the range when the size parameter is 99).
+  a ->
+  -- | Upper bound (the top of the range when the size parameter is 99).
+  a ->
+  Range a
 constantFrom z x y =
   Range z $ \_ -> (x, y)
 
@@ -178,7 +169,6 @@ constantFrom z x y =
 --
 --   >>> origin (constantBounded :: Range Int8)
 --   0
---
 constantBounded :: (Bounded a, Num a) => Range a
 constantBounded =
   constantFrom 0 minBound maxBound
@@ -194,8 +184,7 @@ constantBounded =
 --
 --   >>> bounds 99 $ linear 0 10
 --   (0,10)
---
-linear :: Integral a => a -> a -> Range a
+linear :: (Integral a) => a -> a -> Range a
 linear x y =
   linearFrom x x y
 
@@ -209,22 +198,23 @@ linear x y =
 --
 --   >>> bounds 99 $ linearFrom 0 (-10) 20
 --   (-10,20)
---
-linearFrom :: Integral a
-  => a -- ^ Origin (the value produced when the size parameter is 0).
-  -> a -- ^ Lower bound (the bottom of the range when the size parameter is 99).
-  -> a -- ^ Upper bound (the top of the range when the size parameter is 99).
-  -> Range a
+linearFrom ::
+  (Integral a) =>
+  -- | Origin (the value produced when the size parameter is 0).
+  a ->
+  -- | Lower bound (the bottom of the range when the size parameter is 99).
+  a ->
+  -- | Upper bound (the top of the range when the size parameter is 99).
+  a ->
+  Range a
 linearFrom z x y =
   Range z $ \sz ->
-    let
-      x_sized =
-        clamp x y $ scaleLinear sz z x
+    let x_sized =
+          clamp x y $ scaleLinear sz z x
 
-      y_sized =
-        clamp x y $ scaleLinear sz z y
-    in
-      (x_sized, y_sized)
+        y_sized =
+          clamp x y $ scaleLinear sz z y
+     in (x_sized, y_sized)
 
 -- | Construct a range which is scaled relative to the size parameter and uses
 --   the full range of a data type.
@@ -237,7 +227,6 @@ linearFrom z x y =
 --
 --   >>> bounds 99 (linearBounded :: Range Int8)
 --   (-128,127)
---
 linearBounded :: (Bounded a, Integral a) => Range a
 linearBounded =
   linearFrom 0 minBound maxBound
@@ -246,7 +235,6 @@ linearBounded =
 --   parameter.
 --
 --   /This works the same as 'linear', but for fractional values./
---
 linearFrac :: (Fractional a, Ord a) => a -> a -> Range a
 linearFrac x y =
   linearFracFrom x x y
@@ -254,18 +242,15 @@ linearFrac x y =
 -- | Construct a range which scales the bounds relative to the size parameter.
 --
 --   /This works the same as 'linearFrom', but for fractional values./
---
 linearFracFrom :: (Fractional a, Ord a) => a -> a -> a -> Range a
 linearFracFrom z x y =
   Range z $ \sz ->
-    let
-      x_sized =
-        clamp x y $ scaleLinearFrac sz z x
+    let x_sized =
+          clamp x y $ scaleLinearFrac sz z x
 
-      y_sized =
-        clamp x y $ scaleLinearFrac sz z y
-    in
-      (x_sized, y_sized)
+        y_sized =
+          clamp x y $ scaleLinearFrac sz z y
+     in (x_sized, y_sized)
 
 -- | Truncate a value so it stays within some range.
 --
@@ -274,51 +259,43 @@ linearFracFrom z x y =
 --
 --   >>> clamp 5 10 0
 --   5
---
-clamp :: Ord a => a -> a -> a -> a
+clamp :: (Ord a) => a -> a -> a -> a
 clamp x y n =
-  if x > y then
-    min x (max y n)
-  else
-    min y (max x n)
+  if x > y
+    then min x (max y n)
+    else min y (max x n)
 
 -- | Scale an integral linearly with the size parameter.
---
-scaleLinear :: Integral a => Size -> a -> a -> a
+scaleLinear :: (Integral a) => Size -> a -> a -> a
 scaleLinear sz0 z0 n0 =
-  let
-    sz =
-      max 0 (min 99 sz0)
+  let sz =
+        max 0 (min 99 sz0)
 
-    z =
-      toInteger z0
+      z =
+        toInteger z0
 
-    n =
-      toInteger n0
+      n =
+        toInteger n0
 
-    -- @rng@ has magnitude 1 bigger than the biggest diff
-    -- i.e. it specifies the range the diff can be in [0,rng)
-    -- with the upper bound being exclusive.
-    rng =
-      n - z + signum (n - z)
+      -- @rng@ has magnitude 1 bigger than the biggest diff
+      -- i.e. it specifies the range the diff can be in [0,rng)
+      -- with the upper bound being exclusive.
+      rng =
+        n - z + signum (n - z)
 
-    diff =
-      (rng * fromIntegral sz) `quot` 100
-  in
-    fromInteger $ z + diff
+      diff =
+        (rng * fromIntegral sz) `quot` 100
+   in fromInteger $ z + diff
 
 -- | Scale a fractional number linearly with the size parameter.
---
-scaleLinearFrac :: Fractional a => Size -> a -> a -> a
+scaleLinearFrac :: (Fractional a) => Size -> a -> a -> a
 scaleLinearFrac sz0 z n =
-  let
-    sz =
-      max 0 (min 99 sz0)
+  let sz =
+        max 0 (min 99 sz0)
 
-    diff =
-      (n - z) * (fromIntegral sz / 99)
-  in
-    z + diff
+      diff =
+        (n - z) * (fromIntegral sz / 99)
+   in z + diff
 
 -- | Construct a range which scales the second bound exponentially relative to
 --   the size parameter.
@@ -340,8 +317,7 @@ scaleLinearFrac sz0 z n =
 --
 --   >>> bounds 99 $ exponential 1 512
 --   (1,512)
---
-exponential :: Integral a => a -> a -> Range a
+exponential :: (Integral a) => a -> a -> Range a
 exponential x y =
   exponentialFrom x x y
 
@@ -362,22 +338,23 @@ exponential x y =
 --
 --   >>> bounds 99 $ exponentialFrom x (-128) 512
 --   (-128,512)
---
-exponentialFrom :: Integral a
-  => a -- ^ Origin (the value produced when the size parameter is 0).
-  -> a -- ^ Lower bound (the bottom of the range when the size parameter is 99).
-  -> a -- ^ Upper bound (the top of the range when the size parameter is 99).
-  -> Range a
+exponentialFrom ::
+  (Integral a) =>
+  -- | Origin (the value produced when the size parameter is 0).
+  a ->
+  -- | Lower bound (the bottom of the range when the size parameter is 99).
+  a ->
+  -- | Upper bound (the top of the range when the size parameter is 99).
+  a ->
+  Range a
 exponentialFrom z x y =
   Range z $ \sz ->
-    let
-      sized_x =
-        clamp x y $ scaleExponential sz z x
+    let sized_x =
+          clamp x y $ scaleExponential sz z x
 
-      sized_y =
-        clamp x y $ scaleExponential sz z y
-    in
-      (sized_x, sized_y)
+        sized_y =
+          clamp x y $ scaleExponential sz z y
+     in (sized_x, sized_y)
 
 -- | Construct a range which is scaled exponentially relative to the size
 --   parameter and uses the full range of a data type.
@@ -390,7 +367,6 @@ exponentialFrom z x y =
 --
 --   >>> bounds 99 (exponentialBounded :: Range Int8)
 --   (-128,127)
---
 exponentialBounded :: (Bounded a, Integral a) => Range a
 exponentialBounded =
   exponentialFrom 0 minBound maxBound
@@ -408,7 +384,6 @@ exponentialBounded =
 --
 --   >>> bounds 99 $ exponentialFloat 0 10
 --   (0.0,10.0)
---
 exponentialFloat :: (Floating a, Ord a) => a -> a -> Range a
 exponentialFloat x y =
   exponentialFloatFrom x x y
@@ -426,41 +401,32 @@ exponentialFloat x y =
 --
 --   >>> bounds 99 $ exponentialFloatFrom x (-10) 20
 --   (-10.0,20.0)
---
 exponentialFloatFrom :: (Floating a, Ord a) => a -> a -> a -> Range a
 exponentialFloatFrom z x y =
   Range z $ \sz ->
-    let
-      sized_x =
-        clamp x y $ scaleExponentialFloat sz z x
+    let sized_x =
+          clamp x y $ scaleExponentialFloat sz z x
 
-      sized_y =
-        clamp x y $ scaleExponentialFloat sz z y
-    in
-      (sized_x, sized_y)
+        sized_y =
+          clamp x y $ scaleExponentialFloat sz z y
+     in (sized_x, sized_y)
 
 -- | Scale an integral exponentially with the size parameter.
---
-scaleExponential :: Integral a => Size -> a -> a -> a
+scaleExponential :: (Integral a) => Size -> a -> a -> a
 scaleExponential sz z0 n0 =
-  let
-    z =
-      fromIntegral z0
+  let z =
+        fromIntegral z0
 
-    n =
-      fromIntegral n0
-  in
-    round (scaleExponentialFloat sz z n :: Double)
+      n =
+        fromIntegral n0
+   in round (scaleExponentialFloat sz z n :: Double)
 
 -- | Scale a floating-point number exponentially with the size parameter.
---
-scaleExponentialFloat :: Floating a => Size -> a -> a -> a
+scaleExponentialFloat :: (Floating a) => Size -> a -> a -> a
 scaleExponentialFloat sz0 z n =
-  let
-    sz =
-      clamp 0 99 sz0
+  let sz =
+        clamp 0 99 sz0
 
-    diff =
-      (((abs (n - z) + 1) ** (realToFrac sz / 99)) - 1) * signum (n - z)
-  in
-    z + diff
+      diff =
+        (((abs (n - z) + 1) ** (realToFrac sz / 99)) - 1) * signum (n - z)
+   in z + diff

@@ -1,5 +1,6 @@
-{-# OPTIONS_HADDOCK not-home #-}
 {-# LANGUAGE CPP #-}
+{-# OPTIONS_HADDOCK not-home #-}
+
 -- |
 -- This is a port of "Fast Splittable Pseudorandom Number Generators" by Steele
 -- et. al. [1].
@@ -24,51 +25,50 @@
 --
 -- 2. Nikos Baxevanis
 --    https://github.com/moodmosaic/SplitMix/blob/master/SplitMix.hs
---
 
 #include "MachDeps.h"
 
-module Hedgehog.Internal.Seed (
-    Seed(..)
-  , random
-  , from
-  , split
-  , nextInteger
-  , nextDouble
-  ) where
+module Hedgehog.Internal.Seed
+  ( Seed (..),
+    random,
+    from,
+    split,
+    nextInteger,
+    nextDouble,
+  )
+where
 
-import           Data.Bifunctor (first)
-import           Data.Bits ((.|.), xor, shiftR, popCount)
+import Data.Bifunctor (first)
+import Data.Bits (popCount, shiftR, xor, (.|.))
 #if (SIZEOF_HSINT == 8)
 import           Data.Int (Int64)
 #else
 import           Data.Int (Int32)
 import           Data.Word (Word32)
 #endif
-import           Data.Time.Clock.POSIX (getPOSIXTime)
-import           Data.IORef (IORef)
-import qualified Data.IORef as IORef
-import           Data.Word (Word64)
-
-import           System.IO.Unsafe (unsafePerformIO)
-import           System.Random (RandomGen)
-import qualified System.Random as Random
+import Data.IORef (IORef)
+import Data.IORef qualified as IORef
+import Data.Time.Clock.POSIX (getPOSIXTime)
+import Data.Word (Word64)
+import System.IO.Unsafe (unsafePerformIO)
+import System.Random (RandomGen)
+import System.Random qualified as Random
 
 -- | A splittable random number generator.
---
-data Seed =
-  Seed {
-      seedValue :: !Word64
-    , seedGamma :: !Word64 -- ^ must be an odd number
-    } deriving (Eq, Ord)
+data Seed = Seed
+  { seedValue :: !Word64,
+    -- | must be an odd number
+    seedGamma :: !Word64
+  }
+  deriving (Eq, Ord)
 
 instance Show Seed where
   showsPrec p (Seed v g) =
     showParen (p > 10) $
-      showString "Seed " .
-      showsPrec 11 v .
-      showChar ' ' .
-      showsPrec 11 g
+      showString "Seed "
+        . showsPrec 11 v
+        . showChar ' '
+        . showsPrec 11 g
 
 instance Read Seed where
   readsPrec p =
@@ -87,13 +87,11 @@ global =
 {-# NOINLINE global #-}
 
 -- | Create a random 'Seed' using an effectful source of randomness.
---
 random :: IO Seed
 random =
   IORef.atomicModifyIORef' global split
 
 -- | Create a 'Seed' using a 'Word64'.
---
 from :: Word64 -> Seed
 from x =
   Seed (mix64 x) (mixGamma (x + goldenGamma))
@@ -104,77 +102,58 @@ from x =
 --
 --   We choose: the odd integer closest to @2^64/φ@, where @φ = (1 + √5)/2@ is
 --   the golden ratio.
---
 goldenGamma :: Word64
 goldenGamma =
   0x9e3779b97f4a7c15
 
 -- | Get the next value in the SplitMix sequence.
---
 next :: Seed -> (Word64, Seed)
 next (Seed v0 g) =
-  let
-    v = v0 + g
-  in
-    (v, Seed v g)
+  let v = v0 + g
+   in (v, Seed v g)
 
 -- | Splits a random number generator in to two.
---
 split :: Seed -> (Seed, Seed)
 split s0 =
-  let
-    (v0, s1) = next s0
-    (g0, s2) = next s1
-  in
-    (s2, Seed (mix64 v0) (mixGamma g0))
+  let (v0, s1) = next s0
+      (g0, s2) = next s1
+   in (s2, Seed (mix64 v0) (mixGamma g0))
 
 -- | Generate a random 'Word64'.
---
 nextWord64 :: Seed -> (Word64, Seed)
 nextWord64 s0 =
-  let
-    (v0, s1) = next s0
-  in
-    (mix64 v0, s1)
+  let (v0, s1) = next s0
+   in (mix64 v0, s1)
 
 -- | Generate a random 'Integer' in the [inclusive,inclusive] range.
---
 nextInteger :: Integer -> Integer -> Seed -> (Integer, Seed)
 nextInteger lo hi =
   Random.randomR (lo, hi)
 
 -- | Generate a random 'Double' in the [inclusive,exclusive) range.
---
 nextDouble :: Double -> Double -> Seed -> (Double, Seed)
 nextDouble lo hi =
   Random.randomR (lo, hi)
 
 mix64 :: Word64 -> Word64
 mix64 x =
-  let
-    y = (x `xor` (x `shiftR` 33)) * 0xff51afd7ed558ccd
-    z = (y `xor` (y `shiftR` 33)) * 0xc4ceb9fe1a85ec53
-  in
-    z `xor` (z `shiftR` 33)
+  let y = (x `xor` (x `shiftR` 33)) * 0xff51afd7ed558ccd
+      z = (y `xor` (y `shiftR` 33)) * 0xc4ceb9fe1a85ec53
+   in z `xor` (z `shiftR` 33)
 
 mix64variant13 :: Word64 -> Word64
 mix64variant13 x =
-  let
-    y = (x `xor` (x `shiftR` 30)) * 0xbf58476d1ce4e5b9
-    z = (y `xor` (y `shiftR` 27)) * 0x94d049bb133111eb
-  in
-    z `xor` (z `shiftR` 31)
+  let y = (x `xor` (x `shiftR` 30)) * 0xbf58476d1ce4e5b9
+      z = (y `xor` (y `shiftR` 27)) * 0x94d049bb133111eb
+   in z `xor` (z `shiftR` 31)
 
 mixGamma :: Word64 -> Word64
 mixGamma x =
-  let
-    y = mix64variant13 x .|. 1
-    n = popCount $ y `xor` (y `shiftR` 1)
-  in
-    if n < 24 then
-      y `xor` 0xaaaaaaaaaaaaaaaa
-    else
-      y
+  let y = mix64variant13 x .|. 1
+      n = popCount $ y `xor` (y `shiftR` 1)
+   in if n < 24
+        then y `xor` 0xaaaaaaaaaaaaaaaa
+        else y
 
 ------------------------------------------------------------------------
 -- RandomGen instances

@@ -1,107 +1,105 @@
-module Hedgehog.Gen (
-  -- ** Shrinking
-    shrink
-  , prune
+module Hedgehog.Gen
+  ( -- ** Shrinking
+    shrink,
+    prune,
 
-  -- ** Size
-  , small
-  , scale
-  , resize
-  , sized
+    -- ** Size
+    small,
+    scale,
+    resize,
+    sized,
 
-  -- ** Integral
-  , integral
-  , integral_
+    -- ** Integral
+    integral,
+    integral_,
+    int,
+    int8,
+    int16,
+    int32,
+    int64,
+    word,
+    word8,
+    word16,
+    word32,
+    word64,
 
-  , int
-  , int8
-  , int16
-  , int32
-  , int64
+    -- ** Floating-point
+    realFloat,
+    realFrac_,
+    float,
+    double,
 
-  , word
-  , word8
-  , word16
-  , word32
-  , word64
+    -- ** Enumeration
+    enum,
+    enumBounded,
+    bool,
+    bool_,
 
-  -- ** Floating-point
-  , realFloat
-  , realFrac_
-  , float
-  , double
+    -- ** Characters
+    binit,
+    octit,
+    digit,
+    hexit,
+    lower,
+    upper,
+    alpha,
+    alphaNum,
+    ascii,
+    latin1,
+    unicode,
+    unicodeAll,
 
-  -- ** Enumeration
-  , enum
-  , enumBounded
-  , bool
-  , bool_
+    -- ** Strings
+    string,
+    text,
+    utf8,
+    bytes,
 
-  -- ** Characters
-  , binit
-  , octit
-  , digit
-  , hexit
-  , lower
-  , upper
-  , alpha
-  , alphaNum
-  , ascii
-  , latin1
-  , unicode
-  , unicodeAll
+    -- ** Choice
+    constant,
+    element,
+    choice,
+    frequency,
+    recursive,
 
-  -- ** Strings
-  , string
-  , text
-  , utf8
-  , bytes
+    -- ** Conditional
+    discard,
+    filter,
+    mapMaybe,
+    just,
 
-  -- ** Choice
-  , constant
-  , element
-  , choice
-  , frequency
-  , recursive
+    -- ** Collections
+    maybe,
+    either,
+    either_,
+    list,
+    seq,
+    nonEmpty,
+    set,
+    map,
 
-  -- ** Conditional
-  , discard
-  , filter
-  , mapMaybe
-  , just
+    -- ** Subterms
+    freeze,
+    subterm,
+    subtermM,
+    subterm2,
+    subtermM2,
+    subterm3,
+    subtermM3,
 
-  -- ** Collections
-  , maybe
-  , either
-  , either_
-  , list
-  , seq
-  , nonEmpty
-  , set
-  , map
+    -- ** Combinations & Permutations
+    subsequence,
+    subset,
+    shuffle,
 
-  -- ** Subterms
-  , freeze
-  , subterm
-  , subtermM
-  , subterm2
-  , subtermM2
-  , subterm3
-  , subtermM3
+    -- * Sampling Generators
+    sample,
+    print,
+    printTree,
+    printWith,
+    printTreeWith,
+  )
+where
 
-  -- ** Combinations & Permutations
-  , subsequence
-  , subset
-  , shuffle
-
-  -- * Sampling Generators
-  , sample
-  , print
-  , printTree
-  , printWith
-  , printTreeWith
-  ) where
-
-import           Hedgehog.Internal.Gen
-
-import           Prelude hiding (either, filter, print, maybe, map, seq)
+import Hedgehog.Internal.Gen
+import Prelude hiding (either, filter, map, maybe, print, seq)

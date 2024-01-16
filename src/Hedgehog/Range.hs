@@ -1,33 +1,34 @@
-module Hedgehog.Range (
-  -- * Size
-    Size(..)
+module Hedgehog.Range
+  ( -- * Size
+    Size (..),
 
-  -- * Range
-  , Range
-  , origin
-  , bounds
-  , lowerBound
-  , upperBound
+    -- * Range
+    Range,
+    origin,
+    bounds,
+    lowerBound,
+    upperBound,
 
-  -- * Constant
-  , singleton
-  , constant
-  , constantFrom
-  , constantBounded
+    -- * Constant
+    singleton,
+    constant,
+    constantFrom,
+    constantBounded,
 
-  -- * Linear
-  , linear
-  , linearFrom
-  , linearFrac
-  , linearFracFrom
-  , linearBounded
+    -- * Linear
+    linear,
+    linearFrom,
+    linearFrac,
+    linearFracFrom,
+    linearBounded,
 
-  -- * Exponential
-  , exponential
-  , exponentialFrom
-  , exponentialBounded
-  , exponentialFloat
-  , exponentialFloatFrom
-  ) where
+    -- * Exponential
+    exponential,
+    exponentialFrom,
+    exponentialBounded,
+    exponentialFloat,
+    exponentialFloatFrom,
+  )
+where
 
-import           Hedgehog.Internal.Range
+import Hedgehog.Internal.Range

@@ -1,121 +1,102 @@
-{-# OPTIONS_HADDOCK not-home #-}
 {-# LANGUAGE OverloadedStrings #-}
-module Hedgehog.Internal.Report (
-  -- * Report
-    Summary(..)
-  , Report(..)
-  , Progress(..)
-  , Result(..)
+{-# OPTIONS_HADDOCK not-home #-}
 
-  , renderProgress
-  , renderResult
-  , renderSummary
+module Hedgehog.Internal.Report
+  ( -- * Report
+    Summary (..),
+    Report (..),
+    Progress (..),
+    Result (..),
+    renderProgress,
+    renderResult,
+    renderSummary,
+    fromResult,
+    mkFailure,
+  )
+where
 
-  , fromResult
-  , mkFailure
-  ) where
-
-import           Control.Monad (zipWithM)
-import           Control.Monad.Trans.Maybe (MaybeT(..))
-
-import           Data.Bifunctor (bimap, first, second)
-import qualified Data.Char as Char
-import           Data.Either (partitionEithers)
-import qualified Data.List as List
-import           Data.Map (Map)
-import qualified Data.Map as Map
-import           Data.Maybe (mapMaybe, catMaybes)
-import           Data.Text (Text)
-import qualified Data.Text as Text
-import           Data.Traversable (for)
-
-import           Hedgehog.Internal.Config
-import           Hedgehog.Internal.Discovery (Pos(..), Position(..))
-import qualified Hedgehog.Internal.Discovery as Discovery
-import           Hedgehog.Internal.Property (CoverCount(..), CoverPercentage(..))
-import           Hedgehog.Internal.Property (Coverage(..), Label(..), LabelName(..))
-import           Hedgehog.Internal.Property (Log(..), Diff(..))
-import           Hedgehog.Internal.Property (ShrinkCount(..), PropertyCount(..))
-import           Hedgehog.Internal.Property (TestCount(..), DiscardCount(..))
-import           Hedgehog.Internal.Property (coverPercentage, coverageFailures)
-import           Hedgehog.Internal.Property (labelCovered)
-import           Hedgehog.Internal.Property (ShrinkPath(..), skipCompress)
-import           Hedgehog.Internal.Show
-import           Hedgehog.Internal.Source
-
-import           Prelude
-
-import           System.Console.ANSI (ColorIntensity(..), Color(..))
-import           System.Console.ANSI (ConsoleLayer(..), ConsoleIntensity(..))
-import           System.Console.ANSI (SGR(..), setSGRCode)
-import           System.Directory (makeRelativeToCurrentDirectory)
-
-import           System.IO (hSetEncoding, stdout, stderr, utf8)
-
-import           Text.PrettyPrint.Annotated.WL (Doc, (<#>), (<+>))
-import qualified Text.PrettyPrint.Annotated.WL as WL
-import           Text.Printf (printf)
+import Control.Monad (zipWithM)
+import Control.Monad.Trans.Maybe (MaybeT (..))
+import Data.Bifunctor (bimap, first, second)
+import Data.Char qualified as Char
+import Data.Either (partitionEithers)
+import Data.List qualified as List
+import Data.Map (Map)
+import Data.Map qualified as Map
+import Data.Maybe (catMaybes, mapMaybe)
+import Data.Text (Text)
+import Data.Text qualified as Text
+import Data.Traversable (for)
+import Hedgehog.Internal.Config
+import Hedgehog.Internal.Discovery (Pos (..), Position (..))
+import Hedgehog.Internal.Discovery qualified as Discovery
+import Hedgehog.Internal.Property (CoverCount (..), CoverPercentage (..), Coverage (..), Diff (..), DiscardCount (..), Label (..), LabelName (..), Log (..), PropertyCount (..), ShrinkCount (..), ShrinkPath (..), TestCount (..), coverPercentage, coverageFailures, labelCovered, skipCompress)
+import Hedgehog.Internal.Show
+import Hedgehog.Internal.Source
+import System.Console.ANSI (Color (..), ColorIntensity (..), ConsoleIntensity (..), ConsoleLayer (..), SGR (..), setSGRCode)
+import System.Directory (makeRelativeToCurrentDirectory)
+import System.IO (hSetEncoding, stderr, stdout, utf8)
+import Text.PrettyPrint.Annotated.WL (Doc, (<#>), (<+>))
+import Text.PrettyPrint.Annotated.WL qualified as WL
+import Text.Printf (printf)
+import Prelude
 
 ------------------------------------------------------------------------
 -- Data
 
-data FailedAnnotation =
-  FailedAnnotation {
-      failedSpan :: !(Maybe Span)
-    , failedValue :: !String
-    } deriving (Eq, Show)
+data FailedAnnotation = FailedAnnotation
+  { failedSpan :: !(Maybe Span),
+    failedValue :: !String
+  }
+  deriving (Eq, Show)
 
-data FailureReport =
-  FailureReport {
-      failureShrinks :: !ShrinkCount
-    , failureShrinkPath :: !ShrinkPath
-    , failureCoverage :: !(Maybe (Coverage CoverCount))
-    , failureAnnotations :: ![FailedAnnotation]
-    , failureLocation :: !(Maybe Span)
-    , failureMessage :: !String
-    , failureDiff :: !(Maybe Diff)
-    , failureFootnotes :: ![String]
-    } deriving (Eq, Show)
+data FailureReport = FailureReport
+  { failureShrinks :: !ShrinkCount,
+    failureShrinkPath :: !ShrinkPath,
+    failureCoverage :: !(Maybe (Coverage CoverCount)),
+    failureAnnotations :: ![FailedAnnotation],
+    failureLocation :: !(Maybe Span),
+    failureMessage :: !String,
+    failureDiff :: !(Maybe Diff),
+    failureFootnotes :: ![String]
+  }
+  deriving (Eq, Show)
 
 -- | The status of a running property test.
---
-data Progress =
-    Running
+data Progress
+  = Running
   | Shrinking !FailureReport
-    deriving (Eq, Show)
+  deriving (Eq, Show)
 
 -- | The status of a completed property test.
 --
 --   In the case of a failure it provides the seed used for the test, the
 --   number of shrinks, and the execution log.
---
-data Result =
-    Failed !FailureReport
+data Result
+  = Failed !FailureReport
   | GaveUp
   | OK
-    deriving (Eq, Show)
+  deriving (Eq, Show)
 
 -- | A report on a running or completed property test.
---
-data Report a =
-  Report {
-      reportTests :: !TestCount
-    , reportDiscards :: !DiscardCount
-    , reportCoverage :: !(Coverage CoverCount)
-    , reportSeed :: !Seed
-    , reportStatus :: !a
-    } deriving (Show, Functor, Foldable, Traversable)
+data Report a = Report
+  { reportTests :: !TestCount,
+    reportDiscards :: !DiscardCount,
+    reportCoverage :: !(Coverage CoverCount),
+    reportSeed :: !Seed,
+    reportStatus :: !a
+  }
+  deriving (Show, Functor, Foldable, Traversable)
 
 -- | A summary of all the properties executed.
---
-data Summary =
-  Summary {
-      summaryWaiting :: !PropertyCount
-    , summaryRunning :: !PropertyCount
-    , summaryFailed :: !PropertyCount
-    , summaryGaveUp :: !PropertyCount
-    , summaryOK :: !PropertyCount
-    } deriving (Show)
+data Summary = Summary
+  { summaryWaiting :: !PropertyCount,
+    summaryRunning :: !PropertyCount,
+    summaryFailed :: !PropertyCount,
+    summaryGaveUp :: !PropertyCount,
+    summaryOK :: !PropertyCount
+  }
+  deriving (Show)
 
 instance Monoid Summary where
   mempty =
@@ -131,15 +112,14 @@ instance Semigroup Summary where
       (x5 + y5)
 
 -- | Construct a summary from a single result.
---
 fromResult :: Result -> Summary
 fromResult = \case
   Failed _ ->
-    mempty { summaryFailed = 1 }
+    mempty {summaryFailed = 1}
   GaveUp ->
-    mempty { summaryGaveUp = 1 }
+    mempty {summaryGaveUp = 1}
   OK ->
-    mempty { summaryOK = 1 }
+    mempty {summaryOK = 1}
 
 summaryCompleted :: Summary -> PropertyCount
 summaryCompleted (Summary _ _ x3 x4 x5) =
@@ -152,29 +132,29 @@ summaryTotal (Summary x1 x2 x3 x4 x5) =
 ------------------------------------------------------------------------
 -- Pretty Printing Helpers
 
-data Line a =
-  Line {
-      _lineAnnotation :: !a
-    , lineNumber :: !LineNo
-    , _lineSource :: !String
-    } deriving (Eq, Ord, Show, Functor)
+data Line a = Line
+  { _lineAnnotation :: !a,
+    lineNumber :: !LineNo,
+    _lineSource :: !String
+  }
+  deriving (Eq, Ord, Show, Functor)
 
-data Declaration a =
-  Declaration {
-      declarationFile :: !FilePath
-    , declarationLine :: !LineNo
-    , _declarationName :: !String
-    , declarationSource :: !(Map LineNo (Line a))
-    } deriving (Eq, Ord, Show, Functor)
+data Declaration a = Declaration
+  { declarationFile :: !FilePath,
+    declarationLine :: !LineNo,
+    _declarationName :: !String,
+    declarationSource :: !(Map LineNo (Line a))
+  }
+  deriving (Eq, Ord, Show, Functor)
 
-data Style =
-    StyleDefault
+data Style
+  = StyleDefault
   | StyleAnnotation
   | StyleFailure
-    deriving (Eq, Ord, Show)
+  deriving (Eq, Ord, Show)
 
-data Markup =
-    WaitingIcon
+data Markup
+  = WaitingIcon
   | WaitingHeader
   | RunningIcon
   | RunningHeader
@@ -207,7 +187,7 @@ data Markup =
   | ReproduceHeader
   | ReproduceGutter
   | ReproduceSource
-    deriving (Eq, Ord, Show)
+  deriving (Eq, Ord, Show)
 
 instance Semigroup Style where
   (<>) x y =
@@ -240,29 +220,28 @@ takeFootnote = \case
     Nothing
 
 mkFailure ::
-     ShrinkCount
-  -> ShrinkPath
-  -> Maybe (Coverage CoverCount)
-  -> Maybe Span
-  -> String
-  -> Maybe Diff
-  -> [Log]
-  -> FailureReport
+  ShrinkCount ->
+  ShrinkPath ->
+  Maybe (Coverage CoverCount) ->
+  Maybe Span ->
+  String ->
+  Maybe Diff ->
+  [Log] ->
+  FailureReport
 mkFailure shrinks shrinkPath mcoverage location message diff logs =
-  let
-    inputs =
-      mapMaybe takeAnnotation logs
+  let inputs =
+        mapMaybe takeAnnotation logs
 
-    footnotes =
-      mapMaybe takeFootnote logs
-  in
-    FailureReport shrinks shrinkPath mcoverage inputs location message diff footnotes
+      footnotes =
+        mapMaybe takeFootnote logs
+   in FailureReport shrinks shrinkPath mcoverage inputs location message diff footnotes
 
 ------------------------------------------------------------------------
 -- Pretty Printing
 
-ppShow :: Show x => x -> Doc a
-ppShow = -- unfortunate naming clash
+ppShow :: (Show x) => x -> Doc a
+ppShow =
+  -- unfortunate naming clash
   WL.text . show
 
 markup :: Markup -> Doc Markup -> Doc Markup
@@ -299,13 +278,11 @@ ppShrinkCount = \case
     ppShow n <+> "shrinks"
 
 -- | Render a compressed 'Skip'.
---
 ppSkip :: Skip -> Doc a
 ppSkip =
   WL.text . skipCompress
 
 -- | Render a compressed 'Skip', such that it can be read back in.
---
 ppSkipReadable :: Skip -> Doc a
 ppSkipReadable =
   WL.text . show . skipCompress
@@ -335,62 +312,61 @@ ppShrinkDiscard s d =
 
 mapSource :: (Map LineNo (Line a) -> Map LineNo (Line a)) -> Declaration a -> Declaration a
 mapSource f decl =
-  decl {
-      declarationSource =
+  decl
+    { declarationSource =
         f (declarationSource decl)
     }
 
 -- | The span of non-whitespace characters for the line.
 --
 --   The result is @[inclusive, exclusive)@.
---
 lineSpan :: Line a -> (ColumnNo, ColumnNo)
 lineSpan (Line _ _ x0) =
-  let
-    (pre, x1) =
-      span Char.isSpace x0
+  let (pre, x1) =
+        span Char.isSpace x0
 
-    (_, x2) =
-      span Char.isSpace (reverse x1)
+      (_, x2) =
+        span Char.isSpace (reverse x1)
 
-    start =
-      length pre
+      start =
+        length pre
 
-    end =
-      start + length x2
-  in
-    (fromIntegral start, fromIntegral end)
+      end =
+        start + length x2
+   in (fromIntegral start, fromIntegral end)
 
 takeLines :: Span -> Declaration a -> Map LineNo (Line a)
 takeLines sloc =
-  fst . Map.split (spanEndLine sloc + 1) .
-  snd . Map.split (spanStartLine sloc - 1) .
-  declarationSource
+  fst
+    . Map.split (spanEndLine sloc + 1)
+    . snd
+    . Map.split (spanStartLine sloc - 1)
+    . declarationSource
 
 readDeclaration :: Span -> IO (Maybe (Declaration ()))
 readDeclaration sloc = do
   path <- makeRelativeToCurrentDirectory $ spanFile sloc
 
   runMaybeT $ do
-    (name, Pos (Position _ line0 _) src) <- MaybeT $
-      Discovery.readDeclaration path (spanEndLine sloc)
+    (name, Pos (Position _ line0 _) src) <-
+      MaybeT $
+        Discovery.readDeclaration path (spanEndLine sloc)
 
-    let
-      line =
-        fromIntegral line0
+    let line =
+          fromIntegral line0
 
-    pure . Declaration path line name .
-      Map.fromList .
-      zip [line..] .
-      zipWith (Line ()) [line..] $
-      lines src
-
+    pure
+      . Declaration path line name
+      . Map.fromList
+      . zip [line ..]
+      . zipWith (Line ()) [line ..]
+      $ lines src
 
 defaultStyle :: Declaration a -> Declaration (Style, [(Style, Doc Markup)])
 defaultStyle =
   fmap $ const (StyleDefault, [])
 
-lastLineSpan :: Monad m => Span -> Declaration a -> MaybeT m (ColumnNo, ColumnNo)
+lastLineSpan :: (Monad m) => Span -> Declaration a -> MaybeT m (ColumnNo, ColumnNo)
 lastLineSpan sloc decl =
   case reverse . Map.elems $ takeLines sloc decl of
     [] ->
@@ -401,50 +377,49 @@ lastLineSpan sloc decl =
 
 ppFailedInputTypedArgument :: Int -> FailedAnnotation -> Doc Markup
 ppFailedInputTypedArgument ix (FailedAnnotation _ val) =
-  WL.vsep [
-      WL.text "forAll" <> ppShow ix <+> "="
-    , WL.indent 2 . WL.vsep . fmap (markup AnnotationValue . WL.text) $ lines val
+  WL.vsep
+    [ WL.text "forAll" <> ppShow ix <+> "=",
+      WL.indent 2 . WL.vsep . fmap (markup AnnotationValue . WL.text) $ lines val
     ]
 
 ppFailedInputDeclaration ::
-     FailedAnnotation
-  -> IO (Maybe (Declaration (Style, [(Style, Doc Markup)])))
+  FailedAnnotation ->
+  IO (Maybe (Declaration (Style, [(Style, Doc Markup)])))
 ppFailedInputDeclaration (FailedAnnotation msloc val) =
   runMaybeT $ do
     sloc <- MaybeT $ pure msloc
     decl <- fmap defaultStyle . MaybeT $ readDeclaration sloc
     startCol <- fromIntegral . fst <$> lastLineSpan sloc decl
 
-    let
-      ppValLine =
-        WL.indent startCol .
-          (markup AnnotationGutter (WL.text "│ ") <>) .
-          markup AnnotationValue .
-          WL.text
+    let ppValLine =
+          WL.indent startCol
+            . (markup AnnotationGutter (WL.text "│ ") <>)
+            . markup AnnotationValue
+            . WL.text
 
-      valDocs =
-        fmap ((StyleAnnotation, ) . ppValLine) $
-        List.lines val
+        valDocs =
+          fmap ((StyleAnnotation,) . ppValLine) $
+            List.lines val
 
-      startLine =
-        fromIntegral $ spanStartLine sloc
+        startLine =
+          fromIntegral $ spanStartLine sloc
 
-      endLine =
-        fromIntegral $ spanEndLine sloc
+        endLine =
+          fromIntegral $ spanEndLine sloc
 
-      styleInput kvs =
-        foldr (Map.adjust . fmap . first $ const StyleAnnotation) kvs [startLine..endLine]
+        styleInput kvs =
+          foldr (Map.adjust . fmap . first $ const StyleAnnotation) kvs [startLine .. endLine]
 
-      insertDoc =
-        Map.adjust (fmap . second $ const valDocs) endLine
+        insertDoc =
+          Map.adjust (fmap . second $ const valDocs) endLine
 
     pure $
       mapSource (styleInput . insertDoc) decl
 
 ppFailedInput ::
-     Int
-  -> FailedAnnotation
-  -> IO (Either (Doc Markup) (Declaration (Style, [(Style, Doc Markup)])))
+  Int ->
+  FailedAnnotation ->
+  IO (Either (Doc Markup) (Declaration (Style, [(Style, Doc Markup)])))
 ppFailedInput ix input = do
   mdecl <- ppFailedInputDeclaration input
   case mdecl of
@@ -458,67 +433,65 @@ ppLineDiff = \case
   LineSame x ->
     markup DiffSame $
       "  " <> WL.text x
-
   LineRemoved x ->
     markup DiffRemoved $
       "- " <> WL.text x
-
   LineAdded x ->
     markup DiffAdded $
       "+ " <> WL.text x
 
 ppDiff :: Diff -> [Doc Markup]
-ppDiff (Diff prefix removed infix_ added suffix diff) = [
-    markup DiffPrefix (WL.text prefix) <>
-    markup DiffRemoved (WL.text removed) <>
-    markup DiffInfix (WL.text infix_) <>
-    markup DiffAdded (WL.text added) <>
-    markup DiffSuffix (WL.text suffix)
-  ] ++ fmap ppLineDiff (toLineDiff diff)
+ppDiff (Diff prefix removed infix_ added suffix diff) =
+  [ markup DiffPrefix (WL.text prefix)
+      <> markup DiffRemoved (WL.text removed)
+      <> markup DiffInfix (WL.text infix_)
+      <> markup DiffAdded (WL.text added)
+      <> markup DiffSuffix (WL.text suffix)
+  ]
+    ++ fmap ppLineDiff (toLineDiff diff)
 
 ppFailureLocation ::
-     [Doc Markup]
-  -> Maybe Diff
-  -> Span
-  -> IO (Maybe (Declaration (Style, [(Style, Doc Markup)])))
+  [Doc Markup] ->
+  Maybe Diff ->
+  Span ->
+  IO (Maybe (Declaration (Style, [(Style, Doc Markup)])))
 ppFailureLocation msgs mdiff sloc =
   runMaybeT $ do
     decl <- fmap defaultStyle . MaybeT $ readDeclaration sloc
     (startCol, endCol) <- bimap fromIntegral fromIntegral <$> lastLineSpan sloc decl
 
-    let
-      arrowDoc =
-        WL.indent startCol $
-          markup FailureArrows (WL.text (replicate (endCol - startCol) '^'))
+    let arrowDoc =
+          WL.indent startCol $
+            markup FailureArrows (WL.text (replicate (endCol - startCol) '^'))
 
-      ppFailure x =
-        WL.indent startCol $
-          markup FailureGutter (WL.text "│ ") <> x
+        ppFailure x =
+          WL.indent startCol $
+            markup FailureGutter (WL.text "│ ") <> x
 
-      msgDocs =
-        fmap ((StyleFailure, ) . ppFailure . markup FailureMessage) msgs
+        msgDocs =
+          fmap ((StyleFailure,) . ppFailure . markup FailureMessage) msgs
 
-      diffDocs =
-        case mdiff of
-          Nothing ->
-            []
-          Just diff ->
-            fmap ((StyleFailure, ) . ppFailure) (ppDiff diff)
+        diffDocs =
+          case mdiff of
+            Nothing ->
+              []
+            Just diff ->
+              fmap ((StyleFailure,) . ppFailure) (ppDiff diff)
 
-      docs =
-        [(StyleFailure, arrowDoc)] ++ msgDocs ++ diffDocs
+        docs =
+          [(StyleFailure, arrowDoc)] ++ msgDocs ++ diffDocs
 
-      startLine =
-        spanStartLine sloc
+        startLine =
+          spanStartLine sloc
 
-      endLine =
-        spanEndLine sloc
+        endLine =
+          spanEndLine sloc
 
-      styleFailure kvs =
-        foldr (Map.adjust . fmap . first $ const StyleFailure) kvs [startLine..endLine]
+        styleFailure kvs =
+          foldr (Map.adjust . fmap . first $ const StyleFailure) kvs [startLine .. endLine]
 
-      insertDoc =
-        Map.adjust (fmap . second $ const docs) endLine
+        insertDoc =
+          Map.adjust (fmap . second $ const docs) endLine
 
     pure $
       mapSource (styleFailure . insertDoc) decl
@@ -529,64 +502,63 @@ ppDeclaration decl =
     Nothing ->
       mempty
     Just (lastLine, _) ->
-      let
-        ppLocation =
-          WL.indent (digits + 1) $
-            markup (StyledBorder StyleDefault) "┏━━" <+>
-            markup DeclarationLocation (WL.text (declarationFile decl)) <+>
-            markup (StyledBorder StyleDefault) "━━━"
+      let ppLocation =
+            WL.indent (digits + 1) $
+              markup (StyledBorder StyleDefault) "┏━━"
+                <+> markup DeclarationLocation (WL.text (declarationFile decl))
+                <+> markup (StyledBorder StyleDefault) "━━━"
 
-        digits =
-          length . show . unLineNo $ lineNumber lastLine
+          digits =
+            length . show . unLineNo $ lineNumber lastLine
 
-        ppLineNo =
-          WL.text . printf ("%" <> show digits <> "d") . unLineNo
+          ppLineNo =
+            WL.text . printf ("%" <> show digits <> "d") . unLineNo
 
-        ppEmptyNo =
-          WL.text $ replicate digits ' '
+          ppEmptyNo =
+            WL.text $ replicate digits ' '
 
-        ppSource style n src =
-          markup (StyledLineNo style) (ppLineNo n) <+>
-          markup (StyledBorder style) "┃" <+>
-          markup (StyledSource style) (WL.text src)
+          ppSource style n src =
+            markup (StyledLineNo style) (ppLineNo n)
+              <+> markup (StyledBorder style) "┃"
+              <+> markup (StyledSource style) (WL.text src)
 
-        ppAnnot (style, doc) =
-          markup (StyledLineNo style) ppEmptyNo <+>
-          markup (StyledBorder style) "┃" <+>
-          doc
+          ppAnnot (style, doc) =
+            markup (StyledLineNo style) ppEmptyNo
+              <+> markup (StyledBorder style) "┃"
+              <+> doc
 
-        ppLines = do
-          Line (style, xs) n src <- Map.elems $ declarationSource decl
-          ppSource style n src : fmap ppAnnot xs
-      in
-        WL.vsep (ppLocation : ppLines)
+          ppLines = do
+            Line (style, xs) n src <- Map.elems $ declarationSource decl
+            ppSource style n src : fmap ppAnnot xs
+       in WL.vsep (ppLocation : ppLines)
 
 ppReproduce :: Maybe Text -> Seed -> Skip -> Doc Markup
 ppReproduce name seed skip =
-  WL.vsep [
-      markup ReproduceHeader
-        "This failure can be reproduced by running:"
-    , gutter ReproduceGutter . markup ReproduceSource $
-        "recheckAt" <+>
-        WL.text (showsPrec 11 seed "") <+>
-        ppSkipReadable skip <+>
-        maybe "<property>" (WL.text . Text.unpack) name
+  WL.vsep
+    [ markup
+        ReproduceHeader
+        "This failure can be reproduced by running:",
+      gutter ReproduceGutter . markup ReproduceSource $
+        "recheckAt"
+          <+> WL.text (showsPrec 11 seed "")
+          <+> ppSkipReadable skip
+          <+> maybe "<property>" (WL.text . Text.unpack) name
     ]
 
-mergeLine :: Semigroup a => Line a -> Line a -> Line a
+mergeLine :: (Semigroup a) => Line a -> Line a -> Line a
 mergeLine (Line x no src) (Line y _ _) =
   Line (x <> y) no src
 
-mergeDeclaration :: Semigroup a => Declaration a -> Declaration a -> Declaration a
+mergeDeclaration :: (Semigroup a) => Declaration a -> Declaration a -> Declaration a
 mergeDeclaration (Declaration file line name src0) (Declaration _ _ _ src1) =
   Declaration file line name $
-  Map.unionWith mergeLine src0 src1
+    Map.unionWith mergeLine src0 src1
 
-mergeDeclarations :: Semigroup a => [Declaration a] -> [Declaration a]
+mergeDeclarations :: (Semigroup a) => [Declaration a] -> [Declaration a]
 mergeDeclarations =
-  Map.elems .
-  Map.fromListWith mergeDeclaration .
-  fmap (\d -> ((declarationFile d, declarationLine d), d))
+  Map.elems
+    . Map.fromListWith mergeDeclaration
+    . fmap (\d -> ((declarationFile d, declarationLine d), d))
 
 ppTextLines :: String -> [Doc Markup]
 ppTextLines =
@@ -594,26 +566,22 @@ ppTextLines =
 
 ppFailureReport :: Maybe Text -> TestCount -> DiscardCount -> Seed -> FailureReport -> IO [Doc Markup]
 ppFailureReport name tests discards seed (FailureReport _ shrinkPath mcoverage inputs0 mlocation0 msg mdiff msgs0) = do
-  let
-    basic =
-      -- Move the failure message to the end section if we have
-      -- no source location or can't find the source file.
-      let
-        msgs1 =
-          msgs0 ++
-          (if null msg then [] else [msg])
+  let basic =
+        -- Move the failure message to the end section if we have
+        -- no source location or can't find the source file.
+        let msgs1 =
+              msgs0
+                ++ (if null msg then [] else [msg])
 
-        docs =
-          concatMap ppTextLines msgs1 ++
-          maybe [] ppDiff mdiff
-      in
-        (docs, Nothing)
+            docs =
+              concatMap ppTextLines msgs1
+                ++ maybe [] ppDiff mdiff
+         in (docs, Nothing)
 
   (msgs1, mlocation) <-
     case mlocation0 of
       Nothing ->
         return basic
-
       Just location0 -> do
         mAdvanced <-
           ppFailureLocation (fmap WL.text $ List.lines msg) mdiff location0
@@ -633,60 +601,55 @@ ppFailureReport name tests discards seed (FailureReport _ shrinkPath mcoverage i
             Nothing ->
               pure Nothing
             Just clocation ->
-              let
-                coverageMsg =
-                  WL.cat [
-                      "Failed ("
-                    , WL.annotate CoverageText $
-                        ppCoverPercentage (coverPercentage tests count) <> " coverage"
-                    , ")"
-                    ]
-              in
-                ppFailureLocation [coverageMsg] Nothing clocation
+              let coverageMsg =
+                    WL.cat
+                      [ "Failed (",
+                        WL.annotate CoverageText $
+                          ppCoverPercentage (coverPercentage tests count) <> " coverage",
+                        ")"
+                      ]
+               in ppFailureLocation [coverageMsg] Nothing clocation
 
-  (args, idecls) <- fmap partitionEithers $ zipWithM ppFailedInput [0..] inputs0
+  (args, idecls) <- fmap partitionEithers $ zipWithM ppFailedInput [0 ..] inputs0
 
-  let
-    decls =
-      mergeDeclarations .
-      catMaybes $
-        mlocation : coverageLocations <> fmap pure idecls
+  let decls =
+        mergeDeclarations
+          . catMaybes
+          $ mlocation : coverageLocations <> fmap pure idecls
 
-    with xs f =
-      if null xs then
-        []
-      else
-        [f xs]
+      with xs f =
+        if null xs
+          then []
+          else [f xs]
 
-    whenSome f xs =
-      if null xs then
-        xs
-      else
-        f xs
+      whenSome f xs =
+        if null xs
+          then xs
+          else f xs
 
-    bottom =
-      maybe
-        [ppReproduce name seed (SkipToShrink tests discards shrinkPath)]
-        (const [])
-        mcoverage
+      bottom =
+        maybe
+          [ppReproduce name seed (SkipToShrink tests discards shrinkPath)]
+          (const [])
+          mcoverage
 
-  pure .
-    whenSome (mempty :) .
-    whenSome (++ [mempty]) .
-    WL.punctuate WL.line .
-    fmap (WL.vsep . fmap (WL.indent 2)) .
-    fmap (id :: [Doc Markup] -> [Doc Markup]) .
-    List.filter (not . null) $
-    concat [
-      with args $
-        WL.punctuate WL.line
-    , with decls $
-        WL.punctuate WL.line . fmap ppDeclaration
-    , with msgs1 $
-        id
-    , with bottom $
-        id
-    ]
+  pure
+    . whenSome (mempty :)
+    . whenSome (++ [mempty])
+    . WL.punctuate WL.line
+    . fmap (WL.vsep . fmap (WL.indent 2))
+    . fmap (id :: [Doc Markup] -> [Doc Markup])
+    . List.filter (not . null)
+    $ concat
+      [ with args $
+          WL.punctuate WL.line,
+        with decls $
+          WL.punctuate WL.line . fmap ppDeclaration,
+        with msgs1 $
+          id,
+        with bottom $
+          id
+      ]
 
 ppName :: Maybe Text -> Doc a
 ppName = \case
@@ -699,92 +662,92 @@ ppProgress :: Maybe Text -> Report Progress -> IO (Doc Markup)
 ppProgress name (Report tests discards coverage _ status) =
   case status of
     Running ->
-      pure . WL.vsep $ [
-          icon RunningIcon '●' . WL.annotate RunningHeader $
-            ppName name <+>
-            "passed" <+>
-            ppTestCount tests <>
-            ppWithDiscardCount discards <+>
-            "(running)"
-        ] ++
-        ppCoverage tests coverage
-
+      pure . WL.vsep $
+        [ icon RunningIcon '●' . WL.annotate RunningHeader $
+            ppName name
+              <+> "passed"
+              <+> ppTestCount tests
+              <> ppWithDiscardCount discards
+              <+> "(running)"
+        ]
+          ++ ppCoverage tests coverage
     Shrinking failure ->
       pure . icon ShrinkingIcon '↯' . WL.annotate ShrinkingHeader $
-        ppName name <+>
-        "failed" <+> ppFailedAtLocation (failureLocation failure) <#>
-        "after" <+>
-        ppTestCount tests <>
-        ppShrinkDiscard (failureShrinks failure) discards <+>
-        "(shrinking)"
+        ppName name
+          <+> "failed"
+          <+> ppFailedAtLocation (failureLocation failure)
+          <#> "after"
+            <+> ppTestCount tests
+            <> ppShrinkDiscard (failureShrinks failure) discards
+            <+> "(shrinking)"
 
 ppResult :: Maybe Text -> Report Result -> IO (Doc Markup)
 ppResult name (Report tests discards coverage seed result) = do
   case result of
     Failed failure -> do
       pfailure <- ppFailureReport name tests discards seed failure
-      pure . WL.vsep $ [
-          icon FailedIcon '✗' . WL.align . WL.annotate FailedText $
-            ppName name <+>
-            "failed" <+> ppFailedAtLocation (failureLocation failure) <#>
-            "after" <+>
-            ppTestCount tests <>
-            ppShrinkDiscard (failureShrinks failure) discards <>
-            "." <#>
-            "shrink path:" <+>
-            ppSkip (SkipToShrink tests discards $ failureShrinkPath failure)
-        ] ++
-        ppCoverage tests coverage ++
-        pfailure
-
+      pure . WL.vsep $
+        [ icon FailedIcon '✗' . WL.align . WL.annotate FailedText $
+            ppName name
+              <+> "failed"
+              <+> ppFailedAtLocation (failureLocation failure)
+              <#> "after"
+                <+> ppTestCount tests
+                <> ppShrinkDiscard (failureShrinks failure) discards
+                <> "."
+              <#> "shrink path:"
+                <+> ppSkip (SkipToShrink tests discards $ failureShrinkPath failure)
+        ]
+          ++ ppCoverage tests coverage
+          ++ pfailure
     GaveUp ->
-      pure . WL.vsep $ [
-          icon GaveUpIcon '⚐' . WL.annotate GaveUpText $
-            ppName name <+>
-            "gave up after" <+>
-            ppDiscardCount discards <>
-            ", passed" <+>
-            ppTestCount tests <>
-            "."
-        ] ++
-        ppCoverage tests coverage
-
+      pure . WL.vsep $
+        [ icon GaveUpIcon '⚐' . WL.annotate GaveUpText $
+            ppName name
+              <+> "gave up after"
+              <+> ppDiscardCount discards
+              <> ", passed"
+              <+> ppTestCount tests
+              <> "."
+        ]
+          ++ ppCoverage tests coverage
     OK ->
-      pure . WL.vsep $ [
-          icon SuccessIcon '✓' . WL.annotate SuccessText $
-            ppName name <+>
-            "passed" <+>
-            ppTestCount tests <>
-            "."
-        ] ++
-        ppCoverage tests coverage
+      pure . WL.vsep $
+        [ icon SuccessIcon '✓' . WL.annotate SuccessText $
+            ppName name
+              <+> "passed"
+              <+> ppTestCount tests
+              <> "."
+        ]
+          ++ ppCoverage tests coverage
 
 ppFailedAtLocation :: Maybe Span -> Doc Markup
 ppFailedAtLocation = \case
   Just x ->
-    "at" <+>
-    WL.text (spanFile x) <> ":" <>
-    WL.pretty (unLineNo (spanStartLine x)) <> ":" <>
-    WL.pretty (unColumnNo (spanStartColumn x))
+    "at"
+      <+> WL.text (spanFile x)
+      <> ":"
+      <> WL.pretty (unLineNo (spanStartLine x))
+      <> ":"
+      <> WL.pretty (unColumnNo (spanStartColumn x))
   Nothing ->
     mempty
 
 ppCoverage :: TestCount -> Coverage CoverCount -> [Doc Markup]
 ppCoverage tests x =
-  if Map.null (coverageLabels x) then
-    mempty
-  else
-    fmap (ppLabel tests (coverageWidth tests x)) .
-    List.sortOn labelLocation $
-    Map.elems (coverageLabels x)
+  if Map.null (coverageLabels x)
+    then mempty
+    else
+      fmap (ppLabel tests (coverageWidth tests x))
+        . List.sortOn labelLocation
+        $ Map.elems (coverageLabels x)
 
-data ColumnWidth =
-  ColumnWidth {
-      widthPercentage :: !Int
-    , widthMinimum :: !Int
-    , widthName :: !Int
-    , _widthNameFail :: !Int
-    }
+data ColumnWidth = ColumnWidth
+  { widthPercentage :: !Int,
+    widthMinimum :: !Int,
+    widthName :: !Int,
+    _widthNameFail :: !Int
+  }
 
 instance Semigroup ColumnWidth where
   (<>) (ColumnWidth p0 m0 n0 f0) (ColumnWidth p1 m1 n1 f1) =
@@ -806,109 +769,102 @@ coverageWidth tests (Coverage labels) =
 
 labelWidth :: TestCount -> Label CoverCount -> ColumnWidth
 labelWidth tests x =
-  let
-    percentage =
-      length .
-      renderCoverPercentage .
-      coverPercentage tests $
-      labelAnnotation x
+  let percentage =
+        length
+          . renderCoverPercentage
+          . coverPercentage tests
+          $ labelAnnotation x
 
-    minimum_ =
-      if labelMinimum x == 0 then
-        0
-      else
-        length .
-        renderCoverPercentage $
-        labelMinimum x
+      minimum_ =
+        if labelMinimum x == 0
+          then 0
+          else
+            length
+              . renderCoverPercentage
+              $ labelMinimum x
 
-    name =
-      length .
-      unLabelName $
-      labelName x
+      name =
+        length
+          . unLabelName
+          $ labelName x
 
-    nameFail =
-      if labelCovered tests x then
-        0
-      else
-        name
-  in
-    ColumnWidth percentage minimum_ name nameFail
+      nameFail =
+        if labelCovered tests x
+          then 0
+          else name
+   in ColumnWidth percentage minimum_ name nameFail
 
 ppLeftPad :: Int -> Doc a -> Doc a
 ppLeftPad n doc =
-  let
-    ndoc =
-      length (show doc)
+  let ndoc =
+        length (show doc)
 
-    pad =
-      WL.text $
-        List.replicate (n - ndoc) ' '
-  in
-    pad <> doc
+      pad =
+        WL.text $
+          List.replicate (n - ndoc) ' '
+   in pad <> doc
 
 ppLabel :: TestCount -> ColumnWidth -> Label CoverCount -> Doc Markup
 ppLabel tests w x@(MkLabel name _ minimum_ count) =
-  let
-    covered =
-      labelCovered tests x
+  let covered =
+        labelCovered tests x
 
-    ltext =
-      if not covered then
-        WL.annotate CoverageText
-      else
-        id
+      ltext =
+        if not covered
+          then WL.annotate CoverageText
+          else id
 
-    lborder =
-      WL.annotate (StyledBorder StyleDefault)
+      lborder =
+        WL.annotate (StyledBorder StyleDefault)
 
-    licon =
-      if not covered then
-        WL.annotate CoverageText "⚠ "
-      else
-        "  "
+      licon =
+        if not covered
+          then WL.annotate CoverageText "⚠ "
+          else "  "
 
-    lname =
-      WL.fill (widthName w) (ppLabelName name)
+      lname =
+        WL.fill (widthName w) (ppLabelName name)
 
-    wminimum =
-      ppLeftPad (widthMinimum w) $
-        ppCoverPercentage minimum_
+      wminimum =
+        ppLeftPad (widthMinimum w) $
+          ppCoverPercentage minimum_
 
-    wcover i =
-      ppLeftPad (widthPercentage w + length i) $
-        WL.text i <>
-        ppCoverPercentage (coverPercentage tests count)
+      wcover i =
+        ppLeftPad (widthPercentage w + length i) $
+          WL.text i
+            <> ppCoverPercentage (coverPercentage tests count)
 
-    lminimum =
-      if widthMinimum w == 0 then
-        mempty
-      else if not covered then
-        " ✗ " <> wminimum
-      else if minimum_ == 0 then
-        "   " <> ppLeftPad (widthMinimum w) ""
-      else
-        " ✓ " <> wminimum
+      lminimum =
+        if widthMinimum w == 0
+          then mempty
+          else
+            if not covered
+              then " ✗ " <> wminimum
+              else
+                if minimum_ == 0
+                  then "   " <> ppLeftPad (widthMinimum w) ""
+                  else " ✓ " <> wminimum
 
-    lcover =
-      if widthMinimum w == 0 then
-        wcover ""
-      else if not covered then
-        wcover ""
-      else if minimum_ == 0 then
-        wcover ""
-      else
-        wcover ""
-  in
-    WL.hcat [
-        licon
-      , ltext lname
-      , lborder " "
-      , ltext lcover
-      , lborder " "
-      , ltext $ ppCoverBar (coverPercentage tests count) minimum_
-      , lborder "" -- "│"
-      , ltext lminimum
-      ]
+      lcover =
+        if widthMinimum w == 0
+          then wcover ""
+          else
+            if not covered
+              then wcover ""
+              else
+                if minimum_ == 0
+                  then wcover ""
+                  else wcover ""
+   in WL.hcat
+        [ licon,
+          ltext lname,
+          lborder " ",
+          ltext lcover,
+          lborder " ",
+          ltext $ ppCoverBar (coverPercentage tests count) minimum_,
+          lborder "", -- "│"
+          ltext lminimum
+        ]
 
 ppLabelName :: LabelName -> Doc a
 ppLabelName (LabelName name) =
@@ -920,90 +876,87 @@ ppCoverPercentage =
 
 ppCoverBar :: CoverPercentage -> CoverPercentage -> Doc Markup
 ppCoverBar (CoverPercentage percentage) (CoverPercentage minimum_) =
-  let
-    barWidth :: Int
-    barWidth =
-      20
+  let barWidth :: Int
+      barWidth =
+        20
 
-    coverageRatio :: Double
-    coverageRatio =
-      percentage / 100.0
+      coverageRatio :: Double
+      coverageRatio =
+        percentage / 100.0
 
-    coverageWidth_ :: Int
-    coverageWidth_ =
-      floor $
-        coverageRatio * fromIntegral barWidth
+      coverageWidth_ :: Int
+      coverageWidth_ =
+        floor $
+          coverageRatio * fromIntegral barWidth
 
-    minimumRatio :: Double
-    minimumRatio =
-      minimum_ / 100.0
+      minimumRatio :: Double
+      minimumRatio =
+        minimum_ / 100.0
 
-    minimumWidth :: Int
-    minimumWidth =
-      floor $
-        minimumRatio * fromIntegral barWidth
+      minimumWidth :: Int
+      minimumWidth =
+        floor $
+          minimumRatio * fromIntegral barWidth
 
-    index :: [a] -> Int
-    index xs =
-      floor $
-        ((coverageRatio * fromIntegral barWidth) - fromIntegral coverageWidth_) *
-        fromIntegral (length xs)
+      index :: [a] -> Int
+      index xs =
+        floor $
+          ((coverageRatio * fromIntegral barWidth) - fromIntegral coverageWidth_)
+            * fromIntegral (length xs)
 
-    part xs =
-      xs !! index xs
+      part xs =
+        xs !! index xs
 
-    fillWidth =
-      barWidth - coverageWidth_ - 1
+      fillWidth =
+        barWidth - coverageWidth_ - 1
 
-    fillErrorWidth =
-      max 0 (minimumWidth - coverageWidth_ - 1)
+      fillErrorWidth =
+        max 0 (minimumWidth - coverageWidth_ - 1)
 
-    fillSurplusWidth =
-      fillWidth - fillErrorWidth
+      fillSurplusWidth =
+        fillWidth - fillErrorWidth
 
-    bar :: (Char, [Char]) -> Doc Markup
-    bar (full, parts) =
-      WL.hcat [
-        WL.text $ replicate coverageWidth_ full
-      , if fillWidth >= 0 then
-          if index parts == 0 then
-            if fillErrorWidth > 0 then
-              WL.annotate FailedText $ WL.text [part parts]
-            else
-              WL.annotate CoverageFill $ WL.text [part parts]
-          else
-            WL.text [part parts]
-        else
-          ""
-      , WL.annotate FailedText . WL.text $
-          replicate fillErrorWidth (head parts)
-      , WL.annotate CoverageFill . WL.text $
-          replicate fillSurplusWidth (head parts)
-      --
-      -- Uncomment when debugging:
-      --
-      -- , WL.annotate CoverageFill . WL.text $
-      --        " " ++ show barWidth
-      --     ++ " " ++ show coverageWidth_
-      --     ++ " " ++ show minimumWidth
-      --     ++ " " ++ "/"
-      --     ++ " " ++ show fillErrorWidth
-      --     ++ " " ++ "+"
-      --     ++ " " ++ show fillSurplusWidth
-      --     ++ " " ++ "="
-      --     ++ " " ++ show fillWidth
-      ]
-  in
-    bar ('█', ['·', '▏', '▎', '▍', '▌', '▋', '▊', '▉'])
+      bar :: (Char, [Char]) -> Doc Markup
+      bar (full, parts) =
+        WL.hcat
+          [ WL.text $ replicate coverageWidth_ full,
+            if fillWidth >= 0
+              then
+                if index parts == 0
+                  then
+                    if fillErrorWidth > 0
+                      then WL.annotate FailedText $ WL.text [part parts]
+                      else WL.annotate CoverageFill $ WL.text [part parts]
+                  else WL.text [part parts]
+              else "",
+            WL.annotate FailedText . WL.text $
+              replicate fillErrorWidth (head parts),
+            WL.annotate CoverageFill . WL.text $
+              replicate fillSurplusWidth (head parts)
+              --
+              -- Uncomment when debugging:
+              --
+              -- , WL.annotate CoverageFill . WL.text $
+              --        " " ++ show barWidth
+              --     ++ " " ++ show coverageWidth_
+              --     ++ " " ++ show minimumWidth
+              --     ++ " " ++ "/"
+              --     ++ " " ++ show fillErrorWidth
+              --     ++ " " ++ "+"
+              --     ++ " " ++ show fillSurplusWidth
+              --     ++ " " ++ "="
+              --     ++ " " ++ show fillWidth
+          ]
+   in bar ('█', ['·', '▏', '▎', '▍', '▌', '▋', '▊', '▉'])
 
-    -- FIXME Maybe this should be configurable?
-    -- Alternative histogram bars:
-    --bar ('⣿', ['·', '⡀', '⡄', '⡆', '⡇', '⣇', '⣧', '⣷'])
-    --bar ('⣿', ['⢕', '⡀', '⣀', '⣄', '⣤', '⣦', '⣶', '⣷'])
-    --bar ('⣿', ['⢕', '⡵', '⢗', '⣗', '⣟'])
-    --bar ('⣿', [' ', '⡵', '⢗', '⣗', '⣟'])
-    --bar ('█', ['░','▓'])
-    --bar ('█', ['░'])
+-- FIXME Maybe this should be configurable?
+-- Alternative histogram bars:
+-- bar ('⣿', ['·', '⡀', '⡄', '⡆', '⡇', '⣇', '⣧', '⣷'])
+-- bar ('⣿', ['⢕', '⡀', '⣀', '⣄', '⣤', '⣦', '⣶', '⣷'])
+-- bar ('⣿', ['⢕', '⡵', '⢗', '⣗', '⣟'])
+-- bar ('⣿', [' ', '⡵', '⢗', '⣗', '⣟'])
+-- bar ('█', ['░','▓'])
+-- bar ('█', ['░'])
 
 renderCoverPercentage :: CoverPercentage -> String
 renderCoverPercentage (CoverPercentage percentage) =
@@ -1011,180 +964,168 @@ renderCoverPercentage (CoverPercentage percentage) =
 
 ppWhenNonZero :: Doc a -> PropertyCount -> Maybe (Doc a)
 ppWhenNonZero suffix n =
-  if n <= 0 then
-    Nothing
-  else
-    Just $ ppRawPropertyCount n <+> suffix
+  if n <= 0
+    then Nothing
+    else Just $ ppRawPropertyCount n <+> suffix
 
 annotateSummary :: Summary -> Doc Markup -> Doc Markup
 annotateSummary summary =
-  if summaryFailed summary > 0 then
-    icon FailedIcon '✗' . WL.annotate FailedText
-  else if summaryGaveUp summary > 0 then
-    icon GaveUpIcon '⚐' . WL.annotate GaveUpText
-  else if summaryWaiting summary > 0 || summaryRunning summary > 0 then
-    icon WaitingIcon '○' . WL.annotate WaitingHeader
-  else
-    icon SuccessIcon '✓' . WL.annotate SuccessText
+  if summaryFailed summary > 0
+    then icon FailedIcon '✗' . WL.annotate FailedText
+    else
+      if summaryGaveUp summary > 0
+        then icon GaveUpIcon '⚐' . WL.annotate GaveUpText
+        else
+          if summaryWaiting summary > 0 || summaryRunning summary > 0
+            then icon WaitingIcon '○' . WL.annotate WaitingHeader
+            else icon SuccessIcon '✓' . WL.annotate SuccessText
 
 ppSummary :: Summary -> IO (Doc Markup)
 ppSummary summary =
-  let
-    complete =
-      summaryCompleted summary == summaryTotal summary
+  let complete =
+        summaryCompleted summary == summaryTotal summary
 
-    prefix end =
-      if complete then
-        mempty
-      else
-        ppRawPropertyCount (summaryCompleted summary) <>
-        "/" <>
-        ppRawPropertyCount (summaryTotal summary) <+>
-        "complete" <> end
-
-    addPrefix xs =
-      if null xs then
-        prefix mempty : []
-      else
-        prefix ": " : xs
-
-    suffix =
-      if complete then
-        "."
-      else
-        " (running)"
-  in
-    pure .
-      annotateSummary summary .
-      (<> suffix) .
-      WL.hcat .
-      addPrefix .
-      WL.punctuate ", " $
-      catMaybes [
-          ppWhenNonZero "failed" (summaryFailed summary)
-        , ppWhenNonZero "gave up" (summaryGaveUp summary)
-        , if complete then
-            ppWhenNonZero "succeeded" (summaryOK summary)
+      prefix end =
+        if complete
+          then mempty
           else
-            Nothing
-        ]
+            ppRawPropertyCount (summaryCompleted summary)
+              <> "/"
+              <> ppRawPropertyCount (summaryTotal summary)
+              <+> "complete"
+              <> end
+
+      addPrefix xs =
+        if null xs
+          then prefix mempty : []
+          else prefix ": " : xs
+
+      suffix =
+        if complete
+          then "."
+          else " (running)"
+   in pure
+        . annotateSummary summary
+        . (<> suffix)
+        . WL.hcat
+        . addPrefix
+        . WL.punctuate ", "
+        $ catMaybes
+          [ ppWhenNonZero "failed" (summaryFailed summary),
+            ppWhenNonZero "gave up" (summaryGaveUp summary),
+            if complete
+              then ppWhenNonZero "succeeded" (summaryOK summary)
+              else Nothing
+          ]
 
 renderDoc :: UseColor -> Doc Markup -> IO String
 renderDoc color doc = do
-  let
-    dull =
-      SetColor Foreground Dull
+  let dull =
+        SetColor Foreground Dull
 
-    vivid =
-      SetColor Foreground Vivid
+      vivid =
+        SetColor Foreground Vivid
 
-    bold =
-      SetConsoleIntensity BoldIntensity
+      bold =
+        SetConsoleIntensity BoldIntensity
 
-    start = \case
-      WaitingIcon ->
-        setSGRCode []
-      WaitingHeader ->
-        setSGRCode []
-      RunningIcon ->
-        setSGRCode []
-      RunningHeader ->
-        setSGRCode []
-      ShrinkingIcon ->
-        setSGRCode [vivid Red]
-      ShrinkingHeader ->
-        setSGRCode [vivid Red]
-      FailedIcon ->
-        setSGRCode [vivid Red]
-      FailedText ->
-        setSGRCode [vivid Red]
-      GaveUpIcon ->
-        setSGRCode [dull Yellow]
-      GaveUpText ->
-        setSGRCode [dull Yellow]
-      SuccessIcon ->
-        setSGRCode [dull Green]
-      SuccessText ->
-        setSGRCode [dull Green]
-      CoverageIcon ->
-        setSGRCode [dull Yellow]
-      CoverageText ->
-        setSGRCode [dull Yellow]
-      CoverageFill ->
-        setSGRCode [vivid Black]
+      start = \case
+        WaitingIcon ->
+          setSGRCode []
+        WaitingHeader ->
+          setSGRCode []
+        RunningIcon ->
+          setSGRCode []
+        RunningHeader ->
+          setSGRCode []
+        ShrinkingIcon ->
+          setSGRCode [vivid Red]
+        ShrinkingHeader ->
+          setSGRCode [vivid Red]
+        FailedIcon ->
+          setSGRCode [vivid Red]
+        FailedText ->
+          setSGRCode [vivid Red]
+        GaveUpIcon ->
+          setSGRCode [dull Yellow]
+        GaveUpText ->
+          setSGRCode [dull Yellow]
+        SuccessIcon ->
+          setSGRCode [dull Green]
+        SuccessText ->
+          setSGRCode [dull Green]
+        CoverageIcon ->
+          setSGRCode [dull Yellow]
+        CoverageText ->
+          setSGRCode [dull Yellow]
+        CoverageFill ->
+          setSGRCode [vivid Black]
+        DeclarationLocation ->
+          setSGRCode []
+        StyledLineNo StyleDefault ->
+          setSGRCode []
+        StyledSource StyleDefault ->
+          setSGRCode []
+        StyledBorder StyleDefault ->
+          setSGRCode []
+        StyledLineNo StyleAnnotation ->
+          setSGRCode [dull Magenta]
+        StyledSource StyleAnnotation ->
+          setSGRCode []
+        StyledBorder StyleAnnotation ->
+          setSGRCode []
+        AnnotationGutter ->
+          setSGRCode [dull Magenta]
+        AnnotationValue ->
+          setSGRCode [dull Magenta]
+        StyledLineNo StyleFailure ->
+          setSGRCode [vivid Red]
+        StyledSource StyleFailure ->
+          setSGRCode [vivid Red, bold]
+        StyledBorder StyleFailure ->
+          setSGRCode []
+        FailureArrows ->
+          setSGRCode [vivid Red]
+        FailureMessage ->
+          setSGRCode []
+        FailureGutter ->
+          setSGRCode []
+        DiffPrefix ->
+          setSGRCode []
+        DiffInfix ->
+          setSGRCode []
+        DiffSuffix ->
+          setSGRCode []
+        DiffSame ->
+          setSGRCode []
+        DiffRemoved ->
+          setSGRCode [dull Red]
+        DiffAdded ->
+          setSGRCode [dull Green]
+        ReproduceHeader ->
+          setSGRCode []
+        ReproduceGutter ->
+          setSGRCode []
+        ReproduceSource ->
+          setSGRCode []
 
-      DeclarationLocation ->
-        setSGRCode []
+      end _ =
+        setSGRCode [Reset]
 
-      StyledLineNo StyleDefault ->
-        setSGRCode []
-      StyledSource StyleDefault ->
-        setSGRCode []
-      StyledBorder StyleDefault ->
-        setSGRCode []
-
-      StyledLineNo StyleAnnotation ->
-        setSGRCode [dull Magenta]
-      StyledSource StyleAnnotation ->
-        setSGRCode []
-      StyledBorder StyleAnnotation ->
-        setSGRCode []
-      AnnotationGutter ->
-        setSGRCode [dull Magenta]
-      AnnotationValue ->
-        setSGRCode [dull Magenta]
-
-      StyledLineNo StyleFailure ->
-        setSGRCode [vivid Red]
-      StyledSource StyleFailure ->
-        setSGRCode [vivid Red, bold]
-      StyledBorder StyleFailure ->
-        setSGRCode []
-      FailureArrows ->
-        setSGRCode [vivid Red]
-      FailureMessage ->
-        setSGRCode []
-      FailureGutter ->
-        setSGRCode []
-
-      DiffPrefix ->
-        setSGRCode []
-      DiffInfix ->
-        setSGRCode []
-      DiffSuffix ->
-        setSGRCode []
-      DiffSame ->
-        setSGRCode []
-      DiffRemoved ->
-        setSGRCode [dull Red]
-      DiffAdded ->
-        setSGRCode [dull Green]
-
-      ReproduceHeader ->
-        setSGRCode []
-      ReproduceGutter ->
-        setSGRCode []
-      ReproduceSource ->
-        setSGRCode []
-
-    end _ =
-      setSGRCode [Reset]
-
-  let
-    display =
-      case color of
-        EnableColor ->
-          WL.displayDecorated start end id
-        DisableColor ->
-          WL.display
+  let display =
+        case color of
+          EnableColor ->
+            WL.displayDecorated start end id
+          DisableColor ->
+            WL.display
 
   hSetEncoding stdout utf8
   hSetEncoding stderr utf8
 
-  pure .
-    display .
-    WL.renderSmart 100 $
-    WL.indent 2 doc
+  pure
+    . display
+    . WL.renderSmart 100
+    $ WL.indent 2 doc
 
 renderProgress :: UseColor -> Maybe Text -> Report Progress -> IO String
 renderProgress color name x =
