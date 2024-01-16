@@ -7,7 +7,6 @@ module Hedgehog.Internal.Discovery (
   ) where
 
 import           Control.Exception (IOException, handle)
-import           Control.Monad.IO.Class (MonadIO(..))
 
 import qualified Data.Char as Char
 import qualified Data.List as List
@@ -20,9 +19,9 @@ import           Hedgehog.Internal.Source (LineNo(..), ColumnNo(..))
 ------------------------------------------------------------------------
 -- Property Extraction
 
-readDeclaration :: MonadIO m => FilePath -> LineNo -> m (Maybe (String, Pos String))
+readDeclaration :: FilePath -> LineNo -> IO (Maybe (String, Pos String))
 readDeclaration path line = do
-  mfile <- liftIO $ readFileSafe path
+  mfile <- readFileSafe path
   pure $ do
     file <- mfile
     takeHead .
@@ -30,10 +29,9 @@ readDeclaration path line = do
       filter ((<= line) . posLine . posPostion . snd) $
       Map.toList (findDeclarations path file)
 
-readFileSafe :: MonadIO m => FilePath -> m (Maybe String)
+readFileSafe :: FilePath -> IO (Maybe String)
 readFileSafe path =
-  liftIO $
-    handle (\(_ :: IOException) -> pure Nothing) (Just <$> readFile path)
+  handle (\(_ :: IOException) -> pure Nothing) (Just <$> readFile path)
 
 takeHead :: [a] -> Maybe a
 takeHead = \case

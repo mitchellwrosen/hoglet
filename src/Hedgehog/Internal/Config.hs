@@ -18,8 +18,6 @@ module Hedgehog.Internal.Config (
   , detectColor
   ) where
 
-import           Control.Monad.IO.Class (MonadIO(..))
-
 import qualified Data.Text as Text
 
 import qualified GHC.Conc as Conc
@@ -59,54 +57,52 @@ newtype WorkerCount =
   WorkerCount Int
   deriving (Eq, Ord, Show, Num, Enum, Real, Integral)
 
-detectMark :: MonadIO m => m Bool
+detectMark :: IO Bool
 detectMark = do
-  user <- liftIO $ lookupEnv "USER"
+  user <- lookupEnv "USER"
   pure $ user == Just "mth"
 
-lookupBool :: MonadIO m => String -> m (Maybe Bool)
-lookupBool key =
-  liftIO $ do
-    menv <- lookupEnv key
-    case menv of
-      Just "0" ->
-        pure $ Just False
-      Just "no" ->
-        pure $ Just False
-      Just "false" ->
-        pure $ Just False
+lookupBool :: String -> IO (Maybe Bool)
+lookupBool key = do
+  menv <- lookupEnv key
+  case menv of
+    Just "0" ->
+      pure $ Just False
+    Just "no" ->
+      pure $ Just False
+    Just "false" ->
+      pure $ Just False
 
-      Just "1" ->
-        pure $ Just True
-      Just "yes" ->
-        pure $ Just True
-      Just "true" ->
-        pure $ Just True
+    Just "1" ->
+      pure $ Just True
+    Just "yes" ->
+      pure $ Just True
+    Just "true" ->
+      pure $ Just True
 
-      _ ->
-        pure Nothing
+    _ ->
+      pure Nothing
 
-detectColor :: MonadIO m => m UseColor
-detectColor =
-  liftIO $ do
-    ok <- lookupBool "HEDGEHOG_COLOR"
-    case ok of
-      Just False ->
-        pure DisableColor
+detectColor :: IO UseColor
+detectColor = do
+  ok <- lookupBool "HEDGEHOG_COLOR"
+  case ok of
+    Just False ->
+      pure DisableColor
 
-      Just True ->
-        pure EnableColor
+    Just True ->
+      pure EnableColor
 
-      Nothing -> do
-        mth <- detectMark
-        if mth then
-          pure DisableColor -- avoid getting fired :)
-        else do
-          enable <- hSupportsANSI stdout
-          if enable then
-            pure EnableColor
-          else
-            pure DisableColor
+    Nothing -> do
+      mth <- detectMark
+      if mth then
+        pure DisableColor -- avoid getting fired :)
+      else do
+        enable <- hSupportsANSI stdout
+        if enable then
+          pure EnableColor
+        else
+          pure DisableColor
 
 splitOn :: String -> String -> [String]
 splitOn needle haystack =
@@ -120,89 +116,85 @@ parseSeed env =
     _ ->
       Nothing
 
-detectSeed :: MonadIO m => m Seed
-detectSeed =
-  liftIO $ do
-    menv <- lookupEnv "HEDGEHOG_SEED"
-    case parseSeed =<< menv of
-      Nothing ->
-        Seed.random
-      Just seed ->
-        pure seed
+detectSeed :: IO Seed
+detectSeed = do
+  menv <- lookupEnv "HEDGEHOG_SEED"
+  case parseSeed =<< menv of
+    Nothing ->
+      Seed.random
+    Just seed ->
+      pure seed
 
-detectVerbosity :: MonadIO m => m Verbosity
-detectVerbosity =
-  liftIO $ do
-    menv <- (readMaybe =<<) <$> lookupEnv "HEDGEHOG_VERBOSITY"
-    case menv of
-      Just (0 :: Int) ->
+detectVerbosity :: IO Verbosity
+detectVerbosity = do
+  menv <- (readMaybe =<<) <$> lookupEnv "HEDGEHOG_VERBOSITY"
+  case menv of
+    Just (0 :: Int) ->
+      pure Quiet
+
+    Just (1 :: Int) ->
+      pure Normal
+
+    _ -> do
+      mth <- detectMark
+      if mth then
         pure Quiet
-
-      Just (1 :: Int) ->
+      else
         pure Normal
 
-      _ -> do
-        mth <- detectMark
-        if mth then
-          pure Quiet
-        else
-          pure Normal
-
-detectWorkers :: MonadIO m => m WorkerCount
+detectWorkers :: IO WorkerCount
 detectWorkers = do
-  liftIO $ do
-    menv <- (readMaybe =<<) <$> lookupEnv "HEDGEHOG_WORKERS"
-    case menv of
-      Nothing ->
-        WorkerCount <$> Conc.getNumProcessors
-      Just env ->
-        pure $ WorkerCount env
+  menv <- (readMaybe =<<) <$> lookupEnv "HEDGEHOG_WORKERS"
+  case menv of
+    Nothing ->
+      WorkerCount <$> Conc.getNumProcessors
+    Just env ->
+      pure $ WorkerCount env
 
-detectSkip :: MonadIO m => m Skip
-detectSkip =
-  liftIO $ do
-    menv <- lookupEnv "HEDGEHOG_SKIP"
-    case menv of
-      Nothing ->
-        pure SkipNothing
-      Just env ->
-        case skipDecompress env of
-          Nothing ->
-            -- It's clearer for the user if we error out here, rather than
-            -- silently defaulting to SkipNothing.
-            error "HEDGEHOG_SKIP is not a valid Skip."
-          Just skip ->
-            pure skip
+detectSkip :: IO Skip
+detectSkip = do
+  menv <- lookupEnv "HEDGEHOG_SKIP"
+  case menv of
+    Nothing ->
+      pure SkipNothing
+    Just env ->
+      case skipDecompress env of
+        Nothing ->
+          -- It's clearer for the user if we error out here, rather than
+          -- silently defaulting to SkipNothing.
+          error "HEDGEHOG_SKIP is not a valid Skip."
+        Just skip ->
+          pure skip
 
-resolveColor :: MonadIO m => Maybe UseColor -> m UseColor
+resolveColor :: Maybe UseColor -> IO UseColor
 resolveColor = \case
   Nothing ->
     detectColor
   Just x ->
     pure x
 
-resolveSeed :: MonadIO m => Maybe Seed -> m Seed
+resolveSeed :: Maybe Seed -> IO Seed
 resolveSeed = \case
   Nothing ->
     detectSeed
   Just x ->
     pure x
 
-resolveVerbosity :: MonadIO m => Maybe Verbosity -> m Verbosity
+resolveVerbosity :: Maybe Verbosity -> IO Verbosity
 resolveVerbosity = \case
   Nothing ->
     detectVerbosity
   Just x ->
     pure x
 
-resolveWorkers :: MonadIO m => Maybe WorkerCount -> m WorkerCount
+resolveWorkers :: Maybe WorkerCount -> IO WorkerCount
 resolveWorkers = \case
   Nothing ->
     detectWorkers
   Just x ->
     pure x
 
-resolveSkip :: MonadIO m => Maybe Skip -> m Skip
+resolveSkip :: Maybe Skip -> IO Skip
 resolveSkip = \case
   Nothing ->
     detectSkip

@@ -13,8 +13,7 @@ module Hedgehog.Internal.Region (
 import           Control.Concurrent.STM (STM, TVar)
 import qualified Control.Concurrent.STM.TMVar as TMVar
 import qualified Control.Concurrent.STM.TVar as TVar
-import           Control.Exception.Safe (MonadMask, bracket)
-import           Control.Monad.IO.Class (MonadIO(..))
+import           Control.Exception.Safe (bracket)
 
 import           System.Console.Regions (ConsoleRegion, RegionLayout(..), LiftRegion(..))
 import qualified System.Console.Regions as Console
@@ -73,16 +72,11 @@ setRegion (Region var) content =
       Closed ->
         pure ()
 
-displayRegions :: (MonadIO m, MonadMask m) => m a -> m a
+displayRegions :: IO a -> IO a
 displayRegions io =
   Console.displayConsoleRegions io
 
-displayRegion ::
-     MonadIO m
-  => MonadMask m
-  => LiftRegion m
-  => (Region -> m a)
-  -> m a
+displayRegion :: (Region -> IO a) -> IO a
 displayRegion =
   displayRegions . bracket newOpenRegion finishRegion
 

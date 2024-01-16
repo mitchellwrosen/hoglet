@@ -12,7 +12,6 @@ import           Control.Concurrent.Async (forConcurrently)
 import           Control.Concurrent.MVar (MVar)
 import qualified Control.Concurrent.MVar as MVar
 import           Control.Monad (when)
-import           Control.Monad.IO.Class (MonadIO(..))
 
 import           Data.Map.Strict (Map)
 import qualified Data.Map.Strict as Map
@@ -70,35 +69,32 @@ runTasks n tasks start finish finalize runTask = do
     worker []
 
 runActiveFinalizers ::
-     MonadIO m
-  => MVar (TaskIndex, Map TaskIndex (IO ()))
-  -> m ()
-runActiveFinalizers mvar =
-  liftIO $ do
-    again <-
-      MVar.modifyMVar mvar $ \original@(minIx, finalizers0) ->
-        case Map.minViewWithKey finalizers0 of
-          Nothing ->
+     MVar (TaskIndex, Map TaskIndex (IO ()))
+  -> IO ()
+runActiveFinalizers mvar = do
+  again <-
+    MVar.modifyMVar mvar $ \original@(minIx, finalizers0) ->
+      case Map.minViewWithKey finalizers0 of
+        Nothing ->
+          pure (original, False)
+
+        Just ((ix, finalize), finalizers) ->
+          if ix == minIx + 1 then do
+            finalize
+            pure ((ix, finalizers), True)
+          else
             pure (original, False)
 
-          Just ((ix, finalize), finalizers) ->
-            if ix == minIx + 1 then do
-              finalize
-              pure ((ix, finalizers), True)
-            else
-              pure (original, False)
-
-    when again $
-      runActiveFinalizers mvar
+  when again $
+    runActiveFinalizers mvar
 
 finalizeTask ::
-     MonadIO m
-  => MVar (TaskIndex, Map TaskIndex (IO ()))
+     MVar (TaskIndex, Map TaskIndex (IO ()))
   -> TaskIndex
   -> IO ()
-  -> m ()
+  -> IO ()
 finalizeTask mvar ix finalize = do
-  liftIO . MVar.modifyMVar_ mvar $ \(minIx, finalizers) ->
+  MVar.modifyMVar_ mvar $ \(minIx, finalizers) ->
     pure (minIx, Map.insert ix finalize finalizers)
   runActiveFinalizers mvar
 

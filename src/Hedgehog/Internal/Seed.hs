@@ -37,8 +37,6 @@ module Hedgehog.Internal.Seed (
   , nextDouble
   ) where
 
-import           Control.Monad.IO.Class (MonadIO(..))
-
 import           Data.Bifunctor (first)
 import           Data.Bits ((.|.), xor, shiftR, popCount)
 #if (SIZEOF_HSINT == 8)
@@ -90,9 +88,9 @@ global =
 
 -- | Create a random 'Seed' using an effectful source of randomness.
 --
-random :: MonadIO m => m Seed
+random :: IO Seed
 random =
-  liftIO $ IORef.atomicModifyIORef' global split
+  IORef.atomicModifyIORef' global split
 
 -- | Create a 'Seed' using a 'Word64'.
 --

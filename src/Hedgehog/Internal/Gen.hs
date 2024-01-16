@@ -112,7 +112,6 @@ module Hedgehog.Internal.Gen (
 
 import           Control.Applicative (Alternative(..))
 import           Control.Monad (filterM, guard, join, replicateM)
-import           Control.Monad.IO.Class (MonadIO(..))
 
 import           Data.Bifunctor (first)
 import           Data.ByteString (ByteString)
@@ -1251,22 +1250,21 @@ shuffleSeq xs =
 --     i <- Gen.int
 --     i /== 0
 -- @
-sample :: MonadIO m => Gen a -> m a
+sample :: Gen a -> IO a
 sample gen =
-  liftIO $
-    let
-      loop n =
-        if n <= 0 then
-          error "Hedgehog.Gen.sample: too many discards, could not generate a sample"
-        else do
-          seed <- Seed.random
-          case runGen 30 seed gen of
-            Nothing ->
-              loop (n - 1)
-            Just x ->
-              pure $ Tree.treeValue x
-    in
-      loop (100 :: Int)
+  let
+    loop n =
+      if n <= 0 then
+        error "Hedgehog.Gen.sample: too many discards, could not generate a sample"
+      else do
+        seed <- Seed.random
+        case runGen 30 seed gen of
+          Nothing ->
+            loop (n - 1)
+          Just x ->
+            pure $ Tree.treeValue x
+  in
+    loop (100 :: Int)
 
 -- | Run a generator with a random seed and print the outcome, and the first
 --   level of shrinks.
@@ -1282,9 +1280,9 @@ sample gen =
 --   > 'b'
 --   > 'c'
 --
-print :: (MonadIO m, Show a) => Gen a -> m ()
+print :: (Show a) => Gen a -> IO ()
 print gen = do
-  seed <- liftIO Seed.random
+  seed <- Seed.random
   printWith 30 seed gen
 
 -- | Print the value produced by a generator, and the first level of shrinks,
@@ -1292,21 +1290,20 @@ print gen = do
 --
 --   Use 'print' to generate a value from a random seed.
 --
-printWith :: (MonadIO m, Show a) => Size -> Seed -> Gen a -> m ()
-printWith size seed gen =
-  liftIO $ do
-    case runGen size seed gen of
-      Nothing -> do
-        putStrLn "=== Outcome ==="
-        putStrLn "<discard>"
+printWith :: (Show a) => Size -> Seed -> Gen a -> IO ()
+printWith size seed gen = do
+  case runGen size seed gen of
+    Nothing -> do
+      putStrLn "=== Outcome ==="
+      putStrLn "<discard>"
 
-      Just (Tree x ss) -> do
-        putStrLn "=== Outcome ==="
-        putStrLn (show x)
-        putStrLn "=== Shrinks ==="
+    Just (Tree x ss) -> do
+      putStrLn "=== Outcome ==="
+      putStrLn (show x)
+      putStrLn "=== Shrinks ==="
 
-        for_ ss $ \s ->
-          putStrLn (show (Tree.treeValue s))
+      for_ ss $ \s ->
+        putStrLn (show (Tree.treeValue s))
 
 -- | Run a generator with a random seed and print the resulting shrink tree.
 --
@@ -1325,9 +1322,9 @@ printWith size seed gen =
 --
 --   /This may not terminate when the tree is very large./
 --
-printTree :: (MonadIO m, Show a) => Gen a -> m ()
+printTree :: (Show a) => Gen a -> IO ()
 printTree gen = do
-  seed <- liftIO Seed.random
+  seed <- Seed.random
   printTreeWith 30 seed gen
 
 -- | Print the shrink tree produced by a generator, for the given size and
@@ -1335,9 +1332,9 @@ printTree gen = do
 --
 --   Use 'printTree' to generate a value from a random seed.
 --
-printTreeWith :: (MonadIO m, Show a) => Size -> Seed -> Gen a -> m ()
+printTreeWith :: (Show a) => Size -> Seed -> Gen a -> IO ()
 printTreeWith size seed gen = do
-  liftIO . putStr $
+  putStr $
     renderTree size seed gen
 
 -- | Render the shrink tree produced by a generator, for the given size and

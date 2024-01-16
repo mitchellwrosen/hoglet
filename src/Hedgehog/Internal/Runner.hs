@@ -13,7 +13,6 @@ module Hedgehog.Internal.Runner (
 
 import           Control.Concurrent.STM (TVar, atomically)
 import qualified Control.Concurrent.STM.TVar as TVar
-import           Control.Monad.IO.Class (MonadIO(..))
 import           Data.Maybe (isJust)
 import           Data.Text (Text)
 import qualified Data.Text as Text
@@ -25,7 +24,7 @@ import           Hedgehog.Internal.Property (Group(..))
 import           Hedgehog.Internal.Property (Journal(..), Coverage(..), CoverCount(..))
 import           Hedgehog.Internal.Property (Property(..), PropertyConfig(..))
 import           Hedgehog.Internal.Property (Test, Failure(..), runTest)
-import           Hedgehog.Internal.Property (ShrinkLimit, withTests, withSkip)
+import           Hedgehog.Internal.Property (withTests, withSkip)
 import           Hedgehog.Internal.Property (TerminationCriteria(..))
 import           Hedgehog.Internal.Property (TestCount(..), PropertyCount(..))
 import           Hedgehog.Internal.Property (confidenceSuccess, confidenceFailure)
@@ -84,14 +83,13 @@ isFailure = \case
     False
 
 takeSmallest ::
-     MonadIO m
-  => ShrinkCount
+     ShrinkCount
   -> ShrinkPath
-  -> ShrinkLimit
-  -> (Progress -> m ())
+  -> Int -- shrink limit
+  -> (Progress -> IO ())
   -> Maybe (Tree (Either Failure (), Journal))
-  -> m Result
-takeSmallest shrinks0 (ShrinkPath shrinkPath0) slimit updateUI =
+  -> IO Result
+takeSmallest shrinks0 (ShrinkPath shrinkPath0) shrinkLimit updateUI =
   let
     loop shrinks revShrinkPath = \case
       Tree (x, (Journal logs)) xs ->
@@ -105,7 +103,7 @@ takeSmallest shrinks0 (ShrinkPath shrinkPath0) slimit updateUI =
 
             updateUI $ Shrinking failure
 
-            if shrinks >= fromIntegral slimit then
+            if shrinks >= fromIntegral shrinkLimit then
               -- if we've hit the shrink limit, don't shrink any further
               pure $ Failed failure
             else
@@ -128,11 +126,10 @@ takeSmallest shrinks0 (ShrinkPath shrinkPath0) slimit updateUI =
 -- off-path. Because the generator is mixed with the test code, it's probably
 -- not possible to avoid this.
 skipToShrink ::
-     MonadIO m
-  => ShrinkPath
-  -> (Progress -> m ())
+     ShrinkPath
+  -> (Progress -> IO ())
   -> Maybe (Tree (Either Failure (), Journal))
-  -> m Result
+  -> IO Result
 skipToShrink (ShrinkPath shrinkPath) updateUI =
   let
     loop shrinks [] = \case
@@ -331,98 +328,94 @@ checkReport cfg size0 seed0 test updateUI = do
   loop 0 0 size0 seed0 mempty
 
 checkRegion ::
-     MonadIO m
-  => Region
+     Region
   -> UseColor
   -> Maybe Text
   -> Size
   -> Seed
   -> Property
-  -> m (Report Result)
-checkRegion region color name size seed prop =
-  liftIO $ do
-    result <-
-      checkReport (propertyConfig prop) size seed (propertyTest prop) $ \progress -> do
-        ppprogress <- renderProgress color name progress
-        case reportStatus progress of
-          Running ->
-            setRegion region ppprogress
-          Shrinking _ ->
-            openRegion region ppprogress
+  -> IO (Report Result)
+checkRegion region color name size seed prop = do
+  result <-
+    checkReport (propertyConfig prop) size seed (propertyTest prop) $ \progress -> do
+      ppprogress <- renderProgress color name progress
+      case reportStatus progress of
+        Running ->
+          setRegion region ppprogress
+        Shrinking _ ->
+          openRegion region ppprogress
 
-    ppresult <- renderResult color name result
-    case reportStatus result of
-      Failed _ ->
-        openRegion region ppresult
-      GaveUp ->
-        openRegion region ppresult
-      OK ->
-        setRegion region ppresult
+  ppresult <- renderResult color name result
+  case reportStatus result of
+    Failed _ ->
+      openRegion region ppresult
+    GaveUp ->
+      openRegion region ppresult
+    OK ->
+      setRegion region ppresult
 
-    pure result
+  pure result
 
 checkNamed ::
-     MonadIO m
-  => Region
+     Region
   -> UseColor
   -> Maybe Text
   -> Maybe Seed
   -> Property
-  -> m (Report Result)
+  -> IO (Report Result)
 checkNamed region color name mseed prop = do
   seed <- resolveSeed mseed
   checkRegion region color name 0 seed prop
 
 -- | Check a property.
 --
-check :: MonadIO m => Property -> m Bool
+check :: Property -> IO Bool
 check prop = do
   color <- detectColor
-  liftIO . displayRegion $ \region ->
+  displayRegion $ \region ->
     (== OK) . reportStatus <$> checkNamed region color Nothing Nothing prop
 
 -- | Check a property using a specific size and seed.
 --
-recheck :: MonadIO m => Size -> Seed -> Property -> m ()
+recheck :: Size -> Seed -> Property -> IO ()
 recheck size seed prop0 = do
   color <- detectColor
   let prop = withTests 1 prop0
-  _ <- liftIO . displayRegion $ \region ->
+  _ <- displayRegion $ \region ->
     checkRegion region color Nothing size seed prop
   pure ()
 
-recheckAt :: MonadIO m => Seed -> Skip -> Property -> m ()
+recheckAt :: Seed -> Skip -> Property -> IO ()
 recheckAt seed skip prop0 = do
   color <- detectColor
   let prop = withSkip skip prop0
-  _ <- liftIO . displayRegion $ \region ->
+  _ <- displayRegion $ \region ->
     checkRegion region color Nothing 0 seed prop
   pure ()
 
 -- | Check a group of properties using the specified runner config.
 --
-checkGroup :: MonadIO m => RunnerConfig -> Group -> m Bool
-checkGroup config (Group group props) =
-  liftIO $ do
-    n <- resolveWorkers (runnerWorkers config)
+checkGroup :: RunnerConfig -> Group -> IO Bool
+checkGroup config (Group group props) = do
+  n <- resolveWorkers (runnerWorkers config)
 
-    -- ensure few spare capabilities for concurrent-output, it's likely that
-    -- our tests will saturate all the capabilities they're given.
-    updateNumCapabilities (n + 2)
+  -- ensure few spare capabilities for concurrent-output, it's likely that
+  -- our tests will saturate all the capabilities they're given.
+  updateNumCapabilities (n + 2)
 
-    hSetEncoding stdout utf8
-    hSetEncoding stderr utf8
+  hSetEncoding stdout utf8
+  hSetEncoding stderr utf8
 
-    putStrLn $ "━━━ " ++ Text.unpack group ++ " ━━━"
+  putStrLn $ "━━━ " ++ Text.unpack group ++ " ━━━"
 
-    seed <- resolveSeed (runnerSeed config)
-    verbosity <- resolveVerbosity (runnerVerbosity config)
-    color <- resolveColor (runnerColor config)
-    summary <- checkGroupWith n verbosity color seed props
+  seed <- resolveSeed (runnerSeed config)
+  verbosity <- resolveVerbosity (runnerVerbosity config)
+  color <- resolveColor (runnerColor config)
+  summary <- checkGroupWith n verbosity color seed props
 
-    pure $
-      summaryFailed summary == 0 &&
-      summaryGaveUp summary == 0
+  pure $
+    summaryFailed summary == 0 &&
+    summaryGaveUp summary == 0
 
 updateSummary :: Region -> TVar Summary -> UseColor -> (Summary -> Summary) -> IO ()
 updateSummary sregion svar color f = do
@@ -441,26 +434,25 @@ checkGroupWith n verbosity color seed props =
     svar <- atomically . TVar.newTVar $ mempty { summaryWaiting = PropertyCount (length props) }
 
     let
-      start (TasksRemaining tasks) _ix (name, prop) =
-        liftIO $ do
-          updateSummary sregion svar color $ \x -> x {
-              summaryWaiting =
-                PropertyCount tasks
-            , summaryRunning =
-                summaryRunning x + 1
-            }
+      start (TasksRemaining tasks) _ix (name, prop) = do
+        updateSummary sregion svar color $ \x -> x {
+            summaryWaiting =
+              PropertyCount tasks
+          , summaryRunning =
+              summaryRunning x + 1
+          }
 
-          atomically $ do
-            region <-
-              case verbosity of
-                Quiet ->
-                  newEmptyRegion
-                Normal ->
-                  newOpenRegion
+        atomically $ do
+          region <-
+            case verbosity of
+              Quiet ->
+                newEmptyRegion
+              Normal ->
+                newOpenRegion
 
-            moveToBottom sregion
+          moveToBottom sregion
 
-            pure (name, prop, region)
+          pure (name, prop, region)
 
       finish (_name, _prop, _region) =
         updateSummary sregion svar color $ \x -> x {
@@ -499,7 +491,7 @@ checkGroupWith n verbosity color seed props =
 -- >     ]
 --
 --
-checkSequential :: MonadIO m => Group -> m Bool
+checkSequential :: Group -> IO Bool
 checkSequential =
   checkGroup
     RunnerConfig {
@@ -535,7 +527,7 @@ checkSequential =
 -- >       ("prop_reverse", prop_reverse)
 -- >     ]
 --
-checkParallel :: MonadIO m => Group -> m Bool
+checkParallel :: Group -> IO Bool
 checkParallel =
   checkGroup
     RunnerConfig {

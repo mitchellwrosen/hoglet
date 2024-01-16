@@ -16,7 +16,6 @@ module Hedgehog.Internal.Report (
   ) where
 
 import           Control.Monad (zipWithM)
-import           Control.Monad.IO.Class (MonadIO(..))
 import           Control.Monad.Trans.Maybe (MaybeT(..))
 
 import           Data.Bifunctor (bimap, first, second)
@@ -368,11 +367,11 @@ takeLines sloc =
   snd . Map.split (spanStartLine sloc - 1) .
   declarationSource
 
-readDeclaration :: MonadIO m => Span -> m (Maybe (Declaration ()))
-readDeclaration sloc =
-  runMaybeT $ do
-    path <- liftIO . makeRelativeToCurrentDirectory $ spanFile sloc
+readDeclaration :: Span -> IO (Maybe (Declaration ()))
+readDeclaration sloc = do
+  path <- makeRelativeToCurrentDirectory $ spanFile sloc
 
+  runMaybeT $ do
     (name, Pos (Position _ line0 _) src) <- MaybeT $
       Discovery.readDeclaration path (spanEndLine sloc)
 
@@ -408,9 +407,8 @@ ppFailedInputTypedArgument ix (FailedAnnotation _ val) =
     ]
 
 ppFailedInputDeclaration ::
-     MonadIO m
-  => FailedAnnotation
-  -> m (Maybe (Declaration (Style, [(Style, Doc Markup)])))
+     FailedAnnotation
+  -> IO (Maybe (Declaration (Style, [(Style, Doc Markup)])))
 ppFailedInputDeclaration (FailedAnnotation msloc val) =
   runMaybeT $ do
     sloc <- MaybeT $ pure msloc
@@ -444,10 +442,9 @@ ppFailedInputDeclaration (FailedAnnotation msloc val) =
       mapSource (styleInput . insertDoc) decl
 
 ppFailedInput ::
-     MonadIO m
-  => Int
+     Int
   -> FailedAnnotation
-  -> m (Either (Doc Markup) (Declaration (Style, [(Style, Doc Markup)])))
+  -> IO (Either (Doc Markup) (Declaration (Style, [(Style, Doc Markup)])))
 ppFailedInput ix input = do
   mdecl <- ppFailedInputDeclaration input
   case mdecl of
@@ -480,11 +477,10 @@ ppDiff (Diff prefix removed infix_ added suffix diff) = [
   ] ++ fmap ppLineDiff (toLineDiff diff)
 
 ppFailureLocation ::
-     MonadIO m
-  => [Doc Markup]
+     [Doc Markup]
   -> Maybe Diff
   -> Span
-  -> m (Maybe (Declaration (Style, [(Style, Doc Markup)])))
+  -> IO (Maybe (Declaration (Style, [(Style, Doc Markup)])))
 ppFailureLocation msgs mdiff sloc =
   runMaybeT $ do
     decl <- fmap defaultStyle . MaybeT $ readDeclaration sloc
@@ -596,7 +592,7 @@ ppTextLines :: String -> [Doc Markup]
 ppTextLines =
   fmap WL.text . List.lines
 
-ppFailureReport :: MonadIO m => Maybe Text -> TestCount -> DiscardCount -> Seed -> FailureReport -> m [Doc Markup]
+ppFailureReport :: Maybe Text -> TestCount -> DiscardCount -> Seed -> FailureReport -> IO [Doc Markup]
 ppFailureReport name tests discards seed (FailureReport _ shrinkPath mcoverage inputs0 mlocation0 msg mdiff msgs0) = do
   let
     basic =
@@ -699,7 +695,7 @@ ppName = \case
   Just name ->
     WL.text (Text.unpack name)
 
-ppProgress :: MonadIO m => Maybe Text -> Report Progress -> m (Doc Markup)
+ppProgress :: Maybe Text -> Report Progress -> IO (Doc Markup)
 ppProgress name (Report tests discards coverage _ status) =
   case status of
     Running ->
@@ -722,7 +718,7 @@ ppProgress name (Report tests discards coverage _ status) =
         ppShrinkDiscard (failureShrinks failure) discards <+>
         "(shrinking)"
 
-ppResult :: MonadIO m => Maybe Text -> Report Result -> m (Doc Markup)
+ppResult :: Maybe Text -> Report Result -> IO (Doc Markup)
 ppResult name (Report tests discards coverage seed result) = do
   case result of
     Failed failure -> do
@@ -1031,7 +1027,7 @@ annotateSummary summary =
   else
     icon SuccessIcon '✓' . WL.annotate SuccessText
 
-ppSummary :: MonadIO m => Summary -> m (Doc Markup)
+ppSummary :: Summary -> IO (Doc Markup)
 ppSummary summary =
   let
     complete =
@@ -1073,7 +1069,7 @@ ppSummary summary =
             Nothing
         ]
 
-renderDoc :: MonadIO m => UseColor -> Doc Markup -> m String
+renderDoc :: UseColor -> Doc Markup -> IO String
 renderDoc color doc = do
   let
     dull =
@@ -1182,23 +1178,22 @@ renderDoc color doc = do
         DisableColor ->
           WL.display
 
-  liftIO $ do
-    hSetEncoding stdout utf8
-    hSetEncoding stderr utf8
+  hSetEncoding stdout utf8
+  hSetEncoding stderr utf8
 
   pure .
     display .
     WL.renderSmart 100 $
     WL.indent 2 doc
 
-renderProgress :: MonadIO m => UseColor -> Maybe Text -> Report Progress -> m String
+renderProgress :: UseColor -> Maybe Text -> Report Progress -> IO String
 renderProgress color name x =
   renderDoc color =<< ppProgress name x
 
-renderResult :: MonadIO m => UseColor -> Maybe Text -> Report Result -> m String
+renderResult :: UseColor -> Maybe Text -> Report Result -> IO String
 renderResult color name x =
   renderDoc color =<< ppResult name x
 
-renderSummary :: MonadIO m => UseColor -> Summary -> m String
+renderSummary :: UseColor -> Summary -> IO String
 renderSummary color x =
   renderDoc color =<< ppSummary x

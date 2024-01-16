@@ -4,11 +4,8 @@ module Hedgehog.Internal.Property (
   -- * Property
     Property(..)
   , PropertyConfig(..)
-  , TestLimit(..)
   , TestCount(..)
-  , DiscardLimit(..)
   , DiscardCount(..)
-  , ShrinkLimit(..)
   , ShrinkCount(..)
   , Skip(..)
   , ShrinkPath(..)
@@ -151,27 +148,14 @@ newtype Confidence =
 --
 data PropertyConfig =
   PropertyConfig {
-      propertyDiscardLimit :: !DiscardLimit
-    , propertyShrinkLimit :: !ShrinkLimit
+      propertyDiscardLimit :: !Int
+    , propertyShrinkLimit :: !Int
     , propertyTerminationCriteria :: !TerminationCriteria
 
     -- | If this is 'Nothing', we take the Skip from the environment variable
     --   @HEDGEHOG_SKIP@.
     , propertySkip :: Maybe Skip
     } deriving (Eq, Ord, Show)
-
--- | The number of successful tests that need to be run before a property test
---   is considered successful.
---
---   Can be constructed using numeric literals:
---
--- @
---   200 :: TestLimit
--- @
---
-newtype TestLimit =
-  TestLimit Int
-  deriving (Eq, Ord, Show, Num, Enum, Real, Integral)
 
 -- | The number of tests a property ran successfully.
 --
@@ -183,31 +167,6 @@ newtype TestCount =
 --
 newtype DiscardCount =
   DiscardCount Int
-  deriving (Eq, Ord, Show, Num, Enum, Real, Integral)
-
--- | The number of discards to allow before giving up.
---
---   Can be constructed using numeric literals:
---
--- @
---   10000 :: DiscardLimit
--- @
---
---
-newtype DiscardLimit =
-  DiscardLimit Int
-  deriving (Eq, Ord, Show, Num, Enum, Real, Integral)
-
--- | The number of shrinks to try before giving up on shrinking.
---
---   Can be constructed using numeric literals:
---
--- @
---   1000 :: ShrinkLimit
--- @
---
-newtype ShrinkLimit =
-  ShrinkLimit Int
   deriving (Eq, Ord, Show, Num, Enum, Real, Integral)
 
 -- | The numbers of times a property was able to shrink after a failing test.
@@ -409,9 +368,9 @@ newtype PropertyCount =
   deriving (Eq, Ord, Show, Num, Enum, Real, Integral)
 
 data TerminationCriteria =
-    EarlyTermination Confidence TestLimit
-  | NoEarlyTermination Confidence TestLimit
-  | NoConfidenceTermination TestLimit
+    EarlyTermination Confidence Int
+  | NoEarlyTermination Confidence Int
+  | NoConfidenceTermination Int
   deriving (Eq, Ord, Show)
 
 --
@@ -796,7 +755,7 @@ defaultConfig =
 
 -- | The minimum amount of tests to run for a 'Property'
 --
-defaultMinTests :: TestLimit
+defaultMinTests :: Int
 defaultMinTests = 100
 
 -- | The default confidence allows one false positive in 10^9 tests
@@ -845,7 +804,7 @@ verifiedTermination =
 --   need to run repeatedly, you can use @withTests 1@ to define a property that
 --   will only be checked once.
 --
-withTests :: TestLimit -> Property -> Property
+withTests :: Int -> Property -> Property
 withTests n =
   let
     setTestLimit tests = \case
@@ -859,14 +818,14 @@ withTests n =
 -- | Set the number of times a property is allowed to discard before the test
 --   runner gives up.
 --
-withDiscards :: DiscardLimit -> Property -> Property
+withDiscards :: Int -> Property -> Property
 withDiscards n =
   mapConfig $ \config -> config { propertyDiscardLimit = n }
 
 -- | Set the number of times a property is allowed to shrink before the test
 --   runner gives up and prints the counterexample.
 --
-withShrinks :: ShrinkLimit -> Property -> Property
+withShrinks :: Int -> Property -> Property
 withShrinks n =
   mapConfig $ \config -> config { propertyShrinkLimit = n }
 
