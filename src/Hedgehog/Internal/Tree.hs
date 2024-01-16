@@ -9,7 +9,7 @@ module Hedgehog.Internal.Tree (
   , prune
 
   , consChild
-  , mapMaybeT
+  , mapMaybe
   , interleave
 
   , render
@@ -70,16 +70,15 @@ prune n (Tree x xs) =
   else
     Tree x (map (prune (n - 1)) xs)
 
-mapMaybeT :: (a -> Maybe b) -> Tree a -> Maybe (Tree b)
-mapMaybeT p (Tree x xs) = do
-  y <- p x
-  Just (Tree y (flattenTrees p xs))
+mapMaybe :: (a -> Maybe b) -> Tree a -> Maybe (Tree b)
+mapMaybe p (Tree x xs) = do
+  Tree <$> p x <*> Just (flattenForest p xs)
 
 flattenTree :: (a -> Maybe b) -> Tree a -> [Tree b]
 flattenTree p (Tree x ys0) =
   let
     ys =
-      flattenTrees p ys0
+      flattenForest p ys0
   in
     case p x of
       Just x' ->
@@ -87,8 +86,8 @@ flattenTree p (Tree x ys0) =
       Nothing ->
         ys
 
-flattenTrees :: (a -> Maybe b) -> [Tree a] -> [Tree b]
-flattenTrees =
+flattenForest :: (a -> Maybe b) -> [Tree a] -> [Tree b]
+flattenForest =
   concatMap .
   flattenTree
 

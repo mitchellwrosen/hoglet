@@ -228,7 +228,7 @@ instance Monad Gen where
     Gen $ \size seed -> do
       let (sk, sm) = Seed.split seed
       ta <- runGen size sm m
-      fmap join (Tree.mapMaybeT (runGen size sk . k) ta)
+      fmap join (Tree.mapMaybe (runGen size sk . k) ta)
 
 instance MonadFail Gen where
   fail =
