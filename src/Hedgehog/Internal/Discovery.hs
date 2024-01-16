@@ -1,7 +1,4 @@
 {-# OPTIONS_HADDOCK not-home #-}
-{-# LANGUAGE DeriveFunctor #-}
-{-# LANGUAGE LambdaCase #-}
-{-# LANGUAGE ScopedTypeVariables #-}
 module Hedgehog.Internal.Discovery (
     readDeclaration
 

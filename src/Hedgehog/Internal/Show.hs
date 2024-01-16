@@ -1,5 +1,4 @@
 {-# OPTIONS_HADDOCK not-home #-}
-{-# LANGUAGE LambdaCase #-}
 module Hedgehog.Internal.Show (
     Name
   , Value(..)

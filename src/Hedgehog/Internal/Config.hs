@@ -1,7 +1,4 @@
 {-# OPTIONS_HADDOCK not-home #-}
-{-# LANGUAGE GeneralizedNewtypeDeriving #-}
-{-# LANGUAGE LambdaCase #-}
-{-# LANGUAGE ScopedTypeVariables #-}
 module Hedgehog.Internal.Config (
     UseColor(..)
   , resolveColor

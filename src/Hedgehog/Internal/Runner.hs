@@ -1,7 +1,5 @@
 {-# OPTIONS_HADDOCK not-home #-}
-{-# LANGUAGE BangPatterns #-}
 {-# LANGUAGE CPP #-}
-{-# LANGUAGE LambdaCase #-}
 module Hedgehog.Internal.Runner (
   -- * Running Individual Properties
     check
@@ -298,6 +296,7 @@ checkReport cfg size0 seed0 test updateUI = do
               let
                 node = runGen size s0 . runTest $ test
               let
+                mkReport :: a -> Report a
                 mkReport =
                   Report (tests + 1) discards coverage0 seed0
               mkReport <$> skipToShrink shrinkPath (updateUI . mkReport) node
@@ -311,6 +310,7 @@ checkReport cfg size0 seed0 test updateUI = do
 
                 Just (Tree (Left _, _) _) ->
                   let
+                    mkReport :: a -> Report a
                     mkReport =
                       Report (tests + 1) discards coverage0 seed0
                   in
