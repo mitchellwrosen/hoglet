@@ -1,21 +1,21 @@
 {-# OPTIONS_HADDOCK not-home #-}
 module Hedgehog.Internal.Config (
     UseColor(..)
-  , resolveColor
 
   , Seed(..)
   , resolveSeed
 
   , Verbosity(..)
-  , resolveVerbosity
 
   , WorkerCount(..)
-  , resolveWorkers
 
   , Skip(..)
   , resolveSkip
 
   , detectColor
+  , detectSeed
+  , detectWorkers
+  , detectVerbosity
   ) where
 
 import qualified Data.Text as Text
@@ -166,31 +166,10 @@ detectSkip = do
         Just skip ->
           pure skip
 
-resolveColor :: Maybe UseColor -> IO UseColor
-resolveColor = \case
-  Nothing ->
-    detectColor
-  Just x ->
-    pure x
-
 resolveSeed :: Maybe Seed -> IO Seed
 resolveSeed = \case
   Nothing ->
     detectSeed
-  Just x ->
-    pure x
-
-resolveVerbosity :: Maybe Verbosity -> IO Verbosity
-resolveVerbosity = \case
-  Nothing ->
-    detectVerbosity
-  Just x ->
-    pure x
-
-resolveWorkers :: Maybe WorkerCount -> IO WorkerCount
-resolveWorkers = \case
-  Nothing ->
-    detectWorkers
   Just x ->
     pure x
 

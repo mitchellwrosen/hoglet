@@ -7,8 +7,7 @@ module Hedgehog.Internal.Runner (
   , recheckAt
 
   -- * Running Groups of Properties
-  , checkParallel
-  , checkSequential
+  , checkGroup
   ) where
 
 import           Control.Concurrent.STM (TVar, atomically)
@@ -393,11 +392,11 @@ recheckAt seed skip prop0 = do
     checkRegion region color Nothing 0 seed prop
   pure ()
 
--- | Check a group of properties using the specified runner config.
+-- | Check a group of properties.
 --
-checkGroup :: RunnerConfig -> Group -> IO Bool
-checkGroup config (Group group props) = do
-  n <- resolveWorkers (runnerWorkers config)
+checkGroup :: Group -> IO Bool
+checkGroup (Group group props) = do
+  n <- detectWorkers
 
   -- ensure few spare capabilities for concurrent-output, it's likely that
   -- our tests will saturate all the capabilities they're given.
@@ -408,28 +407,10 @@ checkGroup config (Group group props) = do
 
   putStrLn $ "━━━ " ++ Text.unpack group ++ " ━━━"
 
-  seed <- resolveSeed (runnerSeed config)
-  verbosity <- resolveVerbosity (runnerVerbosity config)
-  color <- resolveColor (runnerColor config)
-  summary <- checkGroupWith n verbosity color seed props
+  seed <- detectSeed
+  verbosity <- detectVerbosity
+  color <- detectColor
 
-  pure $
-    summaryFailed summary == 0 &&
-    summaryGaveUp summary == 0
-
-updateSummary :: Region -> TVar Summary -> UseColor -> (Summary -> Summary) -> IO ()
-updateSummary sregion svar color f = do
-  summary <- atomically (TVar.modifyTVar' svar f >> TVar.readTVar svar)
-  setRegion sregion =<< renderSummary color summary
-
-checkGroupWith ::
-     WorkerCount
-  -> Verbosity
-  -> UseColor
-  -> Seed
-  -> [(Text, Property)]
-  -> IO Summary
-checkGroupWith n verbosity color seed props =
   displayRegion $ \sregion -> do
     svar <- atomically . TVar.newTVar $ mempty { summaryWaiting = PropertyCount (length props) }
 
@@ -472,71 +453,13 @@ checkGroupWith n verbosity color seed props =
           pure result
 
     updateSummary sregion svar color (const summary)
-    pure summary
 
--- | Check a group of properties sequentially.
---
---   Using Template Haskell for property discovery:
---
--- > tests :: IO Bool
--- > tests =
--- >   checkSequential $$(discover)
---
---   With manually specified properties:
---
--- > tests :: IO Bool
--- > tests =
--- >   checkSequential $ Group "Test.Example" [
--- >       ("prop_reverse", prop_reverse)
--- >     ]
---
---
-checkSequential :: Group -> IO Bool
-checkSequential =
-  checkGroup
-    RunnerConfig {
-        runnerWorkers =
-          Just 1
-      , runnerColor =
-          Nothing
-      , runnerSeed =
-          Nothing
-      , runnerVerbosity =
-          Nothing
-      }
+    pure $
+      summaryFailed summary == 0 &&
+      summaryGaveUp summary == 0
 
--- | Check a group of properties in parallel.
---
---   /Warning: although this check function runs tests faster than/
---   /'checkSequential', it should be noted that it may cause problems with/
---   /properties that are not self-contained. For example, if you have a group/
---   /of tests which all use the same database table, you may find that they/
---   /interfere with each other when being run in parallel./
---
---   Using Template Haskell for property discovery:
---
--- > tests :: IO Bool
--- > tests =
--- >   checkParallel $$(discover)
---
---   With manually specified properties:
---
--- > tests :: IO Bool
--- > tests =
--- >   checkParallel $ Group "Test.Example" [
--- >       ("prop_reverse", prop_reverse)
--- >     ]
---
-checkParallel :: Group -> IO Bool
-checkParallel =
-  checkGroup
-    RunnerConfig {
-        runnerWorkers =
-          Nothing
-      , runnerColor =
-          Nothing
-      , runnerSeed =
-          Nothing
-      , runnerVerbosity =
-          Nothing
-      }
+
+updateSummary :: Region -> TVar Summary -> UseColor -> (Summary -> Summary) -> IO ()
+updateSummary sregion svar color f = do
+  summary <- atomically (TVar.modifyTVar' svar f >> TVar.readTVar svar)
+  setRegion sregion =<< renderSummary color summary

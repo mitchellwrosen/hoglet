@@ -13,8 +13,7 @@ module Hedgehog (
   , recheck
   , recheckAt
 
-  , checkParallel
-  , checkSequential
+  , checkGroup
 
   , Confidence
   , verifiedTermination
@@ -85,6 +84,6 @@ import           Hedgehog.Internal.Property (Test, property)
 import           Hedgehog.Internal.Property (withTests)
 import           Hedgehog.Internal.Property (collect, label)
 import           Hedgehog.Internal.Range (Range, Size(..))
-import           Hedgehog.Internal.Runner (check, recheck, recheckAt, checkSequential, checkParallel)
+import           Hedgehog.Internal.Runner (check, recheck, recheckAt, checkGroup)
 import           Hedgehog.Internal.Seed (Seed(..))
 import           Hedgehog.Internal.Tripping (tripping)
