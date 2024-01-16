@@ -3,9 +3,10 @@ module Hedgehog.Internal.Tripping (
     tripping
   ) where
 
+import           Control.Monad (when)
 import           GHC.Stack (HasCallStack, withFrozenCallStack)
 
-import           Hedgehog.Internal.Property (Test, Diff(..), success, failWith)
+import           Hedgehog.Internal.Property (Test, Diff(..), failWith)
 import           Hedgehog.Internal.Show (valueDiff, mkValue, showPretty)
 
 
@@ -39,9 +40,7 @@ tripping x encode decode =
     my =
       decode i
   in
-    if mx == my then
-      success
-    else
+    when (mx /= my) $ do
       case valueDiff <$> mkValue mx <*> mkValue my of
         Nothing ->
           withFrozenCallStack $

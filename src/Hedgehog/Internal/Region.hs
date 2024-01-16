@@ -13,7 +13,7 @@ module Hedgehog.Internal.Region (
 import           Control.Concurrent.STM (STM, TVar)
 import qualified Control.Concurrent.STM.TMVar as TMVar
 import qualified Control.Concurrent.STM.TVar as TVar
-import           Control.Exception.Safe (bracket)
+import           Control.Exception (bracket)
 
 import           System.Console.Regions (ConsoleRegion, RegionLayout(..), LiftRegion(..))
 import qualified System.Console.Regions as Console

@@ -15,9 +15,7 @@ module Hedgehog.Internal.Property (
   , withSkip
   , property
   , forAll
-  , forAllT
   , forAllWith
-  , forAllWithT
   , defaultMinTests
   , discard
   , skipCompress
@@ -37,9 +35,6 @@ module Hedgehog.Internal.Property (
   , annotateShow
   , footnote
   , footnoteShow
-  , failure
-  , success
-  , assert
   , diff
   , (===)
   , (/==)
@@ -82,7 +77,7 @@ module Hedgehog.Internal.Property (
   ) where
 
 import           Control.DeepSeq (NFData, rnf)
-import           Control.Exception.Safe (SomeException(..), displayException)
+import           Control.Exception (SomeException(..), displayException)
 import           Control.Monad.Trans.Class (MonadTrans(..))
 import           Control.Monad.Trans.Except (ExceptT(..), runExceptT)
 import qualified Control.Monad.Trans.Writer.Lazy as Lazy
@@ -105,7 +100,7 @@ import           Hedgehog.Internal.Exception (tryEvaluate)
 import           Hedgehog.Internal.Gen (Gen)
 import qualified Hedgehog.Internal.Gen as Gen
 import           Hedgehog.Internal.Show
-import           Hedgehog.Internal.Source
+import           Hedgehog.Internal.Source (Span, getCaller)
 
 import qualified Numeric
 
@@ -581,28 +576,6 @@ failExceptionWith messages (SomeException x) =
       , List.dropWhileEnd Char.isSpace (displayException x)
       ]
 
--- | Causes a test to fail.
---
-failure :: (HasCallStack) => Test a
-failure =
-  withFrozenCallStack $ failWith Nothing ""
-
--- | Another name for @pure ()@.
---
-success :: Test ()
-success =
-  pure ()
-
--- | Fails the test if the condition provided is 'False'.
---
-assert :: (HasCallStack) => Bool -> Test ()
-assert b = do
-  ok <- withFrozenCallStack $ eval b
-  if ok then
-    success
-  else
-    withFrozenCallStack failure
-
 -- | Fails the test and shows a git-like diff if the comparison operation
 --   evaluates to 'False' when applied to its arguments.
 --
@@ -624,7 +597,7 @@ diff :: (Show a, Show b, HasCallStack) => a -> (a -> b -> Bool) -> b -> Test ()
 diff x op y = do
   ok <- withFrozenCallStack $ eval (x `op` y)
   if ok then
-    success
+    pure ()
   else
     withFrozenCallStack $ failDiff x y
 
@@ -700,28 +673,11 @@ evalMaybe = \case
 --   /rendering function. This is useful for values which don't have a/
 --   /'Show' instance./
 --
-forAllWithT :: (HasCallStack) => (a -> String) -> Gen a -> Test a
-forAllWithT render gen = do
+forAllWith :: (HasCallStack) => (a -> String) -> Gen a -> Test a
+forAllWith render gen = do
   x <- TestT (lift (lift gen))
   withFrozenCallStack $ annotate (render x)
-  return x
-
--- | Generates a random input for the test by running the provided generator.
---
---   /This is a the same as 'forAll' but allows the user to provide a custom/
---   /rendering function. This is useful for values which don't have a/
---   /'Show' instance./
---
-forAllWith :: (HasCallStack) => (a -> String) -> Gen a -> Test a
-forAllWith render gen =
-  withFrozenCallStack $ forAllWithT render $ gen
-
--- | Generates a random input for the test by running the provided generator.
---
---
-forAllT :: (Show a, HasCallStack) => Gen a -> Test a
-forAllT gen =
-  withFrozenCallStack $ forAllWithT showPretty gen
+  pure x
 
 -- | Generates a random input for the test by running the provided generator.
 --

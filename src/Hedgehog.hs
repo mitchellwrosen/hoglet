@@ -41,9 +41,6 @@ module Hedgehog (
   , annotateShow
   , footnote
   , footnoteShow
-  , success
-  , failure
-  , assert
   , diff
   , (===)
   , (/==)
@@ -66,9 +63,9 @@ module Hedgehog (
 
 import           Hedgehog.Internal.Gen (Gen)
 import           Hedgehog.Internal.Property (annotate, annotateShow)
-import           Hedgehog.Internal.Property (assert, diff, (===), (/==))
+import           Hedgehog.Internal.Property (diff, (===), (/==))
 import           Hedgehog.Internal.Property (classify, cover)
-import           Hedgehog.Internal.Property (discard, failure, success)
+import           Hedgehog.Internal.Property (discard)
 import           Hedgehog.Internal.Property (withDiscards)
 import           Hedgehog.Internal.Property (eval, evalNF)
 import           Hedgehog.Internal.Property (evalEither, evalExceptT, evalMaybe)
