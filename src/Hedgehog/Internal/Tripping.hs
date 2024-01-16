@@ -30,14 +30,9 @@ tripping ::
   (b -> f a) ->
   Test ()
 tripping x encode decode =
-  let mx =
-        pure x
-
-      i =
-        encode x
-
-      my =
-        decode i
+  let mx = pure x
+      i = encode x
+      my = decode i
    in when (mx /= my) $ do
         case valueDiff <$> mkValue mx <*> mkValue my of
           Nothing ->

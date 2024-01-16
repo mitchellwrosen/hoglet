@@ -51,8 +51,7 @@ newtype Size = Size
 instance Show Size where
   showsPrec p (Size x) =
     showParen (p > 10) $
-      showString "Size "
-        . showsPrec 11 x
+      showString "Size " . showsPrec 11 x
 
 instance Read Size where
   readsPrec p =
@@ -95,15 +94,13 @@ bounds sz (Range _ f) =
 -- | Get the lower bound of a range for the given size.
 lowerBound :: (Ord a) => Size -> Range a -> a
 lowerBound sz range =
-  let (x, y) =
-        bounds sz range
+  let (x, y) = bounds sz range
    in min x y
 
 -- | Get the upper bound of a range for the given size.
 upperBound :: (Ord a) => Size -> Range a -> a
 upperBound sz range =
-  let (x, y) =
-        bounds sz range
+  let (x, y) = bounds sz range
    in max x y
 
 -- | Construct a range which represents a constant single value.
@@ -115,7 +112,7 @@ upperBound sz range =
 --   5
 singleton :: a -> Range a
 singleton x =
-  Range x $ \_ -> (x, x)
+  Range x \_ -> (x, x)
 
 -- | Construct a range which is unaffected by the size parameter.
 --
@@ -157,7 +154,7 @@ constantFrom ::
   a ->
   Range a
 constantFrom z x y =
-  Range z $ \_ -> (x, y)
+  Range z \_ -> (x, y)
 
 -- | Construct a range which is unaffected by the size parameter using the full
 --   range of a data type.
@@ -208,12 +205,9 @@ linearFrom ::
   a ->
   Range a
 linearFrom z x y =
-  Range z $ \sz ->
-    let x_sized =
-          clamp x y $ scaleLinear sz z x
-
-        y_sized =
-          clamp x y $ scaleLinear sz z y
+  Range z \sz ->
+    let x_sized = clamp x y $ scaleLinear sz z x
+        y_sized = clamp x y $ scaleLinear sz z y
      in (x_sized, y_sized)
 
 -- | Construct a range which is scaled relative to the size parameter and uses
@@ -244,12 +238,9 @@ linearFrac x y =
 --   /This works the same as 'linearFrom', but for fractional values./
 linearFracFrom :: (Fractional a, Ord a) => a -> a -> a -> Range a
 linearFracFrom z x y =
-  Range z $ \sz ->
-    let x_sized =
-          clamp x y $ scaleLinearFrac sz z x
-
-        y_sized =
-          clamp x y $ scaleLinearFrac sz z y
+  Range z \sz ->
+    let x_sized = clamp x y $ scaleLinearFrac sz z x
+        y_sized = clamp x y $ scaleLinearFrac sz z y
      in (x_sized, y_sized)
 
 -- | Truncate a value so it stays within some range.
@@ -268,33 +259,22 @@ clamp x y n =
 -- | Scale an integral linearly with the size parameter.
 scaleLinear :: (Integral a) => Size -> a -> a -> a
 scaleLinear sz0 z0 n0 =
-  let sz =
-        max 0 (min 99 sz0)
-
-      z =
-        toInteger z0
-
-      n =
-        toInteger n0
+  let sz = max 0 (min 99 sz0)
+      z = toInteger z0
+      n = toInteger n0
 
       -- @rng@ has magnitude 1 bigger than the biggest diff
       -- i.e. it specifies the range the diff can be in [0,rng)
       -- with the upper bound being exclusive.
-      rng =
-        n - z + signum (n - z)
-
-      diff =
-        (rng * fromIntegral sz) `quot` 100
+      rng = n - z + signum (n - z)
+      diff = (rng * fromIntegral sz) `quot` 100
    in fromInteger $ z + diff
 
 -- | Scale a fractional number linearly with the size parameter.
 scaleLinearFrac :: (Fractional a) => Size -> a -> a -> a
 scaleLinearFrac sz0 z n =
-  let sz =
-        max 0 (min 99 sz0)
-
-      diff =
-        (n - z) * (fromIntegral sz / 99)
+  let sz = max 0 (min 99 sz0)
+      diff = (n - z) * (fromIntegral sz / 99)
    in z + diff
 
 -- | Construct a range which scales the second bound exponentially relative to
@@ -348,12 +328,9 @@ exponentialFrom ::
   a ->
   Range a
 exponentialFrom z x y =
-  Range z $ \sz ->
-    let sized_x =
-          clamp x y $ scaleExponential sz z x
-
-        sized_y =
-          clamp x y $ scaleExponential sz z y
+  Range z \sz ->
+    let sized_x = clamp x y $ scaleExponential sz z x
+        sized_y = clamp x y $ scaleExponential sz z y
      in (sized_x, sized_y)
 
 -- | Construct a range which is scaled exponentially relative to the size
@@ -403,30 +380,21 @@ exponentialFloat x y =
 --   (-10.0,20.0)
 exponentialFloatFrom :: (Floating a, Ord a) => a -> a -> a -> Range a
 exponentialFloatFrom z x y =
-  Range z $ \sz ->
-    let sized_x =
-          clamp x y $ scaleExponentialFloat sz z x
-
-        sized_y =
-          clamp x y $ scaleExponentialFloat sz z y
+  Range z \sz ->
+    let sized_x = clamp x y $ scaleExponentialFloat sz z x
+        sized_y = clamp x y $ scaleExponentialFloat sz z y
      in (sized_x, sized_y)
 
 -- | Scale an integral exponentially with the size parameter.
 scaleExponential :: (Integral a) => Size -> a -> a -> a
 scaleExponential sz z0 n0 =
-  let z =
-        fromIntegral z0
-
-      n =
-        fromIntegral n0
+  let z = fromIntegral z0
+      n = fromIntegral n0
    in round (scaleExponentialFloat sz z n :: Double)
 
 -- | Scale a floating-point number exponentially with the size parameter.
 scaleExponentialFloat :: (Floating a) => Size -> a -> a -> a
 scaleExponentialFloat sz0 z n =
-  let sz =
-        clamp 0 99 sz0
-
-      diff =
-        (((abs (n - z) + 1) ** (realToFrac sz / 99)) - 1) * signum (n - z)
+  let sz = clamp 0 99 sz0
+      diff = (((abs (n - z) + 1) ** (realToFrac sz / 99)) - 1) * signum (n - z)
    in z + diff

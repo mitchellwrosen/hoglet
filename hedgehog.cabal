@@ -75,6 +75,7 @@ library
     Hedgehog.Range
 
   default-extensions:
+    BlockArguments
     DerivingStrategies
     GADTs
     LambdaCase

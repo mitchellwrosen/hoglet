@@ -30,42 +30,35 @@ newtype Region = Region
 
 newEmptyRegion :: (LiftRegion m) => m Region
 newEmptyRegion =
-  liftRegion $ do
+  liftRegion do
     ref <- TVar.newTVar Empty
-    pure $ Region ref
+    pure (Region ref)
 
 newOpenRegion :: (LiftRegion m) => m Region
 newOpenRegion =
-  liftRegion $ do
+  liftRegion do
     region <- Console.openConsoleRegion Linear
-    ref <- TVar.newTVar $ Open region
-    pure $ Region ref
+    ref <- TVar.newTVar (Open region)
+    pure (Region ref)
 
 openRegion :: (LiftRegion m) => Region -> String -> m ()
 openRegion (Region var) content =
-  liftRegion $ do
-    body <- TVar.readTVar var
-    case body of
+  liftRegion do
+    TVar.readTVar var >>= \case
       Empty -> do
         region <- Console.openConsoleRegion Linear
         TVar.writeTVar var $ Open region
         Console.setConsoleRegion region content
-      Open region ->
-        Console.setConsoleRegion region content
-      Closed ->
-        pure ()
+      Open region -> Console.setConsoleRegion region content
+      Closed -> pure ()
 
 setRegion :: (LiftRegion m) => Region -> String -> m ()
 setRegion (Region var) content =
-  liftRegion $ do
-    body <- TVar.readTVar var
-    case body of
-      Empty ->
-        pure ()
-      Open region ->
-        Console.setConsoleRegion region content
-      Closed ->
-        pure ()
+  liftRegion do
+    TVar.readTVar var >>= \case
+      Empty -> pure ()
+      Open region -> Console.setConsoleRegion region content
+      Closed -> pure ()
 
 displayRegions :: IO a -> IO a
 displayRegions io =
@@ -77,33 +70,22 @@ displayRegion =
 
 moveToBottom :: Region -> STM ()
 moveToBottom (Region var) =
-  liftRegion $ do
-    body <- TVar.readTVar var
-    case body of
-      Empty ->
-        pure ()
-      Open region -> do
-        mxs <- TMVar.tryTakeTMVar Console.regionList
-        case mxs of
-          Nothing ->
-            pure ()
-          Just xs0 ->
-            let xs1 =
-                  filter (/= region) xs0
-             in TMVar.putTMVar Console.regionList (region : xs1)
-      Closed ->
-        pure ()
+  liftRegion do
+    TVar.readTVar var >>= \case
+      Empty -> pure ()
+      Open region ->
+        TMVar.tryTakeTMVar Console.regionList >>= \case
+          Nothing -> pure ()
+          Just xs -> TMVar.putTMVar Console.regionList (region : filter (/= region) xs)
+      Closed -> pure ()
 
 finishRegion :: (LiftRegion m) => Region -> m ()
 finishRegion (Region var) =
-  liftRegion $ do
-    body <- TVar.readTVar var
-    case body of
-      Empty -> do
-        TVar.writeTVar var Closed
+  liftRegion do
+    TVar.readTVar var >>= \case
+      Empty -> TVar.writeTVar var Closed
       Open region -> do
         content <- Console.getConsoleRegion region
         Console.finishConsoleRegion region content
         TVar.writeTVar var Closed
-      Closed ->
-        pure ()
+      Closed -> pure ()

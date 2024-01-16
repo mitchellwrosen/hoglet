@@ -30,8 +30,7 @@ dequeueMVar ::
   IO (Maybe (TaskIndex, b))
 dequeueMVar mvar start =
   MVar.modifyMVar mvar $ \case
-    [] ->
-      pure ([], Nothing)
+    [] -> pure ([], Nothing)
     (ix, x) : xs -> do
       y <- start (TasksRemaining $ length xs) ix x
       pure (xs, Just (ix, y))
@@ -70,8 +69,7 @@ runActiveFinalizers mvar = do
   again <-
     MVar.modifyMVar mvar $ \original@(minIx, finalizers0) ->
       case Map.minViewWithKey finalizers0 of
-        Nothing ->
-          pure (original, False)
+        Nothing -> pure (original, False)
         Just ((ix, finalize), finalizers) ->
           if ix == minIx + 1
             then do
@@ -79,8 +77,7 @@ runActiveFinalizers mvar = do
               pure ((ix, finalizers), True)
             else pure (original, False)
 
-  when again $
-    runActiveFinalizers mvar
+  when again $ runActiveFinalizers mvar
 
 finalizeTask ::
   MVar (TaskIndex, Map TaskIndex (IO ())) ->

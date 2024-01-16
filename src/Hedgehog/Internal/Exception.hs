@@ -12,10 +12,8 @@ tryAll :: IO a -> IO (Either SomeException a)
 tryAll m =
   catch (fmap Right m) $ \exception ->
     case fromException exception :: Maybe AsyncException of
-      Nothing ->
-        pure $ Left exception
-      Just _ ->
-        throwIO exception
+      Nothing -> pure (Left exception)
+      Just _ -> throwIO exception
 
 tryEvaluate :: a -> Either SomeException a
 tryEvaluate x =

@@ -4,7 +4,7 @@ module Hedgehog.Main
   )
 where
 
-import Control.Monad (unless)
+import Control.Monad (when)
 import System.Exit (exitFailure)
 import System.IO (BufferMode (LineBuffering), hSetBuffering, stderr, stdout)
 
@@ -13,7 +13,5 @@ defaultMain :: [IO Bool] -> IO ()
 defaultMain tests = do
   hSetBuffering stdout LineBuffering
   hSetBuffering stderr LineBuffering
-  result <- and <$> sequence tests
-  unless
-    result
-    exitFailure
+  success <- and <$> sequence tests
+  when (not success) exitFailure

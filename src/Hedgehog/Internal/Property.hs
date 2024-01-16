@@ -185,10 +185,8 @@ data Skip
 instance IsString Skip where
   fromString s =
     case skipDecompress s of
-      Nothing ->
-        error $ "fromString: Not a valid Skip: " ++ s
-      Just skip ->
-        skip
+      Nothing -> error $ "fromString: Not a valid Skip: " ++ s
+      Just skip -> skip
 
 -- | The path taken to reach a shrink state.
 newtype ShrinkPath
@@ -206,16 +204,13 @@ newtype ShrinkPath
 --   This gives something which is hopefully quite short, but a human can
 --   roughly interpret it by eyeball.
 skipCompress :: Skip -> String
-skipCompress =
-  let showTD (TestCount t) (DiscardCount d) =
-        show t ++ (if d == 0 then "" else "/" ++ show d)
-   in \case
-        SkipNothing ->
-          ""
-        SkipToTest t d ->
-          showTD t d
-        SkipToShrink t d sp ->
-          showTD t d ++ ":" ++ shrinkPathCompress sp
+skipCompress = \case
+  SkipNothing -> ""
+  SkipToTest t d -> showTD t d
+  SkipToShrink t d sp -> showTD t d ++ ":" ++ shrinkPathCompress sp
+  where
+    showTD (TestCount t) (DiscardCount d) =
+      show t ++ (if d == 0 then "" else "/" ++ show d)
 
 -- | Compress a 'ShrinkPath' into a hopefully-short alphanumeric string.
 --
@@ -300,8 +295,7 @@ shrinkPathDecompress str =
           _ -> Nothing
 
       spGroups :: [(Maybe Int, Maybe Int)] =
-        let go [] =
-              []
+        let go [] = []
             go (c1 : cs) =
               let (hd, tl1) =
                     span (\c -> classifyChar c == classifyChar c1) cs
@@ -590,10 +584,8 @@ evalNF x =
 --   the 'Right'.
 evalEither :: (Show x, HasCallStack) => Either x a -> Test a
 evalEither = \case
-  Left x ->
-    withFrozenCallStack $ failWith Nothing $ showPretty x
-  Right x ->
-    pure x
+  Left x -> withFrozenCallStack $ failWith Nothing $ showPretty x
+  Right x -> pure x
 
 -- | Fails the test if the 'ExceptT' is 'Left', otherwise returns the value in
 --   the 'Right'.
@@ -605,10 +597,8 @@ evalExceptT m =
 --   the 'Just'.
 evalMaybe :: (Show a, HasCallStack) => Maybe a -> Test a
 evalMaybe = \case
-  Nothing ->
-    withFrozenCallStack $ failWith Nothing "the value was Nothing"
-  Just x ->
-    pure x
+  Nothing -> withFrozenCallStack $ failWith Nothing "the value was Nothing"
+  Just x -> pure x
 
 ------------------------------------------------------------------------
 -- PropertyT
@@ -641,14 +631,10 @@ discard =
 defaultConfig :: PropertyConfig
 defaultConfig =
   PropertyConfig
-    { propertyDiscardLimit =
-        100,
-      propertyShrinkLimit =
-        1000,
-      propertyTerminationCriteria =
-        NoConfidenceTermination defaultMinTests,
-      propertySkip =
-        Nothing
+    { propertyDiscardLimit = 100,
+      propertyShrinkLimit = 1000,
+      propertyTerminationCriteria = NoConfidenceTermination defaultMinTests,
+      propertySkip = Nothing
     }
 
 -- | The minimum amount of tests to run for a 'Property'
@@ -729,51 +715,37 @@ property m =
 -- Coverage
 
 instance Semigroup Cover where
-  (<>) NoCover NoCover =
-    NoCover
-  (<>) _ _ =
-    Cover
+  NoCover <> NoCover = NoCover
+  _ <> _ = Cover
 
 instance Monoid Cover where
-  mempty =
-    NoCover
-  mappend =
-    (<>)
+  mempty = NoCover
 
 instance Semigroup CoverCount where
-  (<>) (CoverCount n0) (CoverCount n1) =
+  CoverCount n0 <> CoverCount n1 =
     CoverCount (n0 + n1)
 
 instance Monoid CoverCount where
-  mempty =
-    CoverCount 0
-  mappend =
-    (<>)
+  mempty = CoverCount 0
 
 toCoverCount :: Cover -> CoverCount
 toCoverCount = \case
-  NoCover ->
-    CoverCount 0
-  Cover ->
-    CoverCount 1
+  NoCover -> CoverCount 0
+  Cover -> CoverCount 1
 
 -- | This semigroup is right biased. The name, location and percentage from the
 --   rightmost `Label` will be kept. This shouldn't be a problem since the
 --   library doesn't allow setting multiple classes with the same 'ClassifierName'.
 instance (Semigroup a) => Semigroup (Label a) where
-  (<>) (MkLabel _ _ _ m0) (MkLabel name location percentage m1) =
+  MkLabel _ _ _ m0 <> MkLabel name location percentage m1 =
     MkLabel name location percentage (m0 <> m1)
 
 instance (Semigroup a) => Semigroup (Coverage a) where
-  (<>) (Coverage c0) (Coverage c1) =
-    Coverage $
-      Map.foldrWithKey (Map.insertWith (<>)) c0 c1
+  Coverage c0 <> Coverage c1 =
+    Coverage (Map.foldrWithKey (Map.insertWith (<>)) c0 c1)
 
 instance (Semigroup a, Monoid a) => Monoid (Coverage a) where
-  mempty =
-    Coverage mempty
-  mappend =
-    (<>)
+  mempty = Coverage mempty
 
 coverPercentage :: TestCount -> CoverCount -> CoverPercentage
 coverPercentage (TestCount tests) (CoverCount count) =
@@ -832,47 +804,29 @@ boundsForLabel tests confidence MkLabel {..} =
 -- wikipedia>) instead of a normal approximation interval.
 wilsonBounds :: Integer -> Integer -> Double -> (Double, Double)
 wilsonBounds positives count acceptance =
-  let p =
-        fromRational $ positives % count
-      n =
-        fromIntegral count
-      z =
-        invnormcdf $ 1 - acceptance / 2
-
-      midpoint =
-        p + z * z / (2 * n)
-
-      offset =
-        z / (1 + z ** 2 / n) * sqrt (p * (1 - p) / n + z ** 2 / (4 * n ** 2))
-
-      denominator =
-        1 + z * z / n
-
-      low =
-        (midpoint - offset) / denominator
-
-      high =
-        (midpoint + offset) / denominator
+  let p = fromRational $ positives % count
+      n = fromIntegral count
+      z = invnormcdf $ 1 - acceptance / 2
+      midpoint = p + z * z / (2 * n)
+      offset = z / (1 + z ** 2 / n) * sqrt (p * (1 - p) / n + z ** 2 / (4 * n ** 2))
+      denominator = 1 + z * z / n
+      low = (midpoint - offset) / denominator
+      high = (midpoint + offset) / denominator
    in (low, high)
 
 fromLabel :: Label a -> Coverage a
 fromLabel x =
-  Coverage $
-    Map.singleton (labelName x) x
+  Coverage (Map.singleton (labelName x) x)
 
 unionsCoverage :: (Semigroup a) => [Coverage a] -> Coverage a
 unionsCoverage =
-  Coverage
-    . Map.unionsWith (<>)
-    . fmap coverageLabels
+  Coverage . Map.unionsWith (<>) . fmap coverageLabels
 
 journalCoverage :: Journal -> Coverage CoverCount
 journalCoverage (Journal logs) =
-  fmap toCoverCount
-    . unionsCoverage
-    $ do
-      Label x <- logs
-      pure (fromLabel x)
+  (fmap toCoverCount . unionsCoverage) do
+    Label x <- logs
+    pure (fromLabel x)
 
 -- | Require a certain percentage of the tests to be covered by the
 --   classifier.

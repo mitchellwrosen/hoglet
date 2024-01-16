@@ -110,7 +110,6 @@ module Hedgehog.Internal.Gen
   )
 where
 
-import Control.Applicative (Alternative (..))
 import Control.Monad (filterM, guard, join, replicateM)
 import Data.Bifunctor (first)
 import Data.ByteString (ByteString)
@@ -156,15 +155,13 @@ runGen size seed (Gen m) =
 -- | Map over a generator's shrink tree.
 mapGen :: (Maybe (Tree a) -> Maybe (Tree b)) -> Gen a -> Gen b
 mapGen f gen =
-  Gen $ \size seed ->
-    f (runGen size seed gen)
+  Gen \size seed -> f (runGen size seed gen)
 
 -- | Lift a predefined shrink tree in to a generator, ignoring the seed and the
 --   size.
 fromTreeMaybeT :: Maybe (Tree a) -> Gen a
 fromTreeMaybeT x =
-  Gen $ \_ _ ->
-    x
+  Gen \_ _ -> x
 
 -- | Lift a predefined shrink tree in to a generator, ignoring the seed and the
 --   size.
@@ -175,26 +172,17 @@ toTreeMaybeT =
 ------------------------------------------------------------------------
 -- Gen instances
 
-instance (Semigroup a) => Semigroup (Gen a) where
-  x <> y =
-    (<>) <$> x <*> y
-
-instance (Monoid a) => Monoid (Gen a) where
-  mempty =
-    pure mempty
-
 --
 -- implementation: parallel shrinking
 --
 instance Applicative Gen where
-  pure =
-    fromTreeMaybeT . Just . pure
+  pure x =
+    Gen \_ _ -> Just (Tree.singleton x)
 
   (<*>) f m =
-    Gen $ \size seed ->
-      case Seed.split seed of
-        (sf, sm) ->
-          (\tf tx -> uncurry ($) <$> Tree.zipTreeT tf tx)
+    Gen \size seed ->
+      let (sf, sm) = Seed.split seed
+       in (\tf tx -> uncurry ($) <$> Tree.zipTreeT tf tx)
             <$> runGen size sf f
             <*> runGen size sm m
 
@@ -216,25 +204,10 @@ instance Monad Gen where
     pure
 
   (>>=) m k =
-    Gen $ \size seed -> do
+    Gen \size seed -> do
       let (sk, sm) = Seed.split seed
       ta <- runGen size sm m
       fmap join (Tree.mapMaybe (runGen size sk . k) ta)
-
-instance MonadFail Gen where
-  fail =
-    error
-
-instance Alternative Gen where
-  empty =
-    discard
-
-  x <|> y =
-    Gen $ \size seed ->
-      case Seed.split seed of
-        (sx, sy) ->
-          runGen size sx x
-            <|> runGen size sy y
 
 ------------------------------------------------------------------------
 -- Combinators
@@ -242,7 +215,7 @@ instance Alternative Gen where
 -- | Generate a value with no shrinks from a 'Size' and a 'Seed'.
 generate :: (Size -> Seed -> a) -> Gen a
 generate f =
-  Gen $ \size seed ->
+  Gen \size seed ->
     Just (Tree.singleton (f size seed))
 
 ------------------------------------------------------------------------
@@ -267,7 +240,7 @@ prune =
 -- | Construct a generator that depends on the size parameter.
 sized :: (Size -> Gen a) -> Gen a
 sized f = do
-  f =<< generate (\size _ -> size)
+  Gen \size seed -> runGen size seed (f size)
 
 -- | Override the size parameter. Returns a generator which uses the given size
 --   instead of the runtime-size parameter.
@@ -277,14 +250,9 @@ resize size gen =
 
 -- | Adjust the size parameter by transforming it with the given function.
 scale :: (Size -> Size) -> Gen a -> Gen a
-scale f =
-  \gen ->
-    Gen $ \size0 seed ->
-      let size =
-            f size0
-       in if size < 0
-            then error "Hedgehog.Gen.scale: negative size"
-            else runGen size seed gen
+scale f gen =
+  Gen \size seed ->
+    runGen (min 99 (max 0 (f size))) seed gen
 
 -- | Make a generator smaller by scaling its size parameter.
 small :: Gen a -> Gen a
@@ -337,24 +305,16 @@ golden x =
 integral :: forall a. (Integral a) => Range a -> Gen a
 integral range =
   -- https://github.com/hedgehogqa/haskell-hedgehog/pull/413/files
-  let origin_ =
-        Range.origin range
+  let origin_ = Range.origin range
 
       binarySearchTree bottom top =
-        let shrinks =
-              Shrink.towards bottom top
-            children =
-              zipWith binarySearchTree shrinks (drop 1 shrinks)
-         in Tree top children
+        let shrinks = Shrink.towards bottom top
+         in Tree top (zipWith binarySearchTree shrinks (drop 1 shrinks))
 
-      createTree root =
-        if root == origin_
-          then Tree.singleton root
-          else
-            Tree.consChild origin_ $
-              binarySearchTree origin_ root
-   in Gen $ \size seed ->
-        Just $ createTree $ integralHelper range size seed
+      createTree root
+        | root == origin_ = Tree.singleton root
+        | otherwise = Tree.consChild origin_ (binarySearchTree origin_ root)
+   in Gen \size seed -> Just (createTree (integralHelper range size seed))
 
 -- | Generates a random integral number in the [inclusive,inclusive] range.
 --
@@ -366,10 +326,8 @@ integral_ =
 -- | Generates a random integral value from a range.
 integralHelper :: (Integral a, Num c) => Range a -> Size -> Seed -> c
 integralHelper range size seed =
-  let (x, y) =
-        Range.bounds size range
-   in fromInteger . fst $
-        Seed.nextInteger (toInteger x) (toInteger y) seed
+  let (x, y) = Range.bounds size range
+   in fromInteger (fst (Seed.nextInteger (toInteger x) (toInteger y) seed))
 
 -- | Generates a random machine integer in the given @[inclusive,inclusive]@ range.
 --
@@ -449,18 +407,16 @@ word64 =
 --   /This generator works the same as 'integral', but for floating point numbers./
 realFloat :: (RealFloat a) => Range a -> Gen a
 realFloat range =
-  shrink (Shrink.towardsFloat $ Range.origin range) (realFrac_ range)
+  shrink (Shrink.towardsFloat (Range.origin range)) (realFrac_ range)
 
 -- | Generates a random fractional number in the [inclusive,exclusive) range.
 --
 --   /This generator does not shrink./
 realFrac_ :: (RealFrac a) => Range a -> Gen a
 realFrac_ range =
-  generate $ \size seed ->
-    let (x, y) =
-          Range.bounds size range
-     in realToFrac . fst $
-          Seed.nextDouble (realToFrac x) (realToFrac y) seed
+  Gen \size seed ->
+    let (x, y) = Range.bounds size range
+     in Just (Tree.singleton (realToFrac (fst (Seed.nextDouble (realToFrac x) (realToFrac y) seed))))
 
 -- | Generates a random floating-point number in the @[inclusive,exclusive)@ range.
 --
@@ -490,8 +446,7 @@ double =
 -- @
 enum :: (Enum a) => a -> a -> Gen a
 enum lo hi =
-  fmap toEnum . integral $
-    Range.constant (fromEnum lo) (fromEnum hi)
+  toEnum <$> integral (Range.constant (fromEnum lo) (fromEnum hi))
 
 -- | Generates a random value from a bounded enumeration.
 --
@@ -523,8 +478,8 @@ bool =
 --   /This generator does not shrink./
 bool_ :: Gen Bool
 bool_ =
-  generate $ \_ seed ->
-    (/= 0) . fst $ Seed.nextInteger 0 1 seed
+  Gen \_ seed ->
+    Just (Tree.singleton (fst (Seed.nextInteger 0 1 seed) /= 0))
 
 ------------------------------------------------------------------------
 -- Combinators - Characters
@@ -586,13 +541,11 @@ latin1 =
 --   @'\0'..'\1114111' (excluding '\55296'..'\57343', '\65534', '\65535')@
 unicode :: Gen Char
 unicode =
-  let s1 =
-        (55296, enum '\0' '\55295')
-      s2 =
-        (8190, enum '\57344' '\65533')
-      s3 =
-        (1048576, enum '\65536' '\1114111')
-   in frequency [s1, s2, s3]
+  frequency
+    [ (55296, enum '\0' '\55295'),
+      (8190, enum '\57344' '\65533'),
+      (1048576, enum '\65536' '\1114111')
+    ]
 
 -- | Generates a Unicode character, including noncharacters and invalid standalone surrogates:
 --   @'\0'..'\1114111'@
@@ -651,11 +604,8 @@ constant =
 --   /The input list must be non-empty./
 element :: (Foldable f) => f a -> Gen a
 element fa = case toList fa of
-  [] ->
-    error "Hedgehog.Gen.element: used with empty Foldable"
-  xs -> do
-    n <- integral $ Range.constant 0 (length xs - 1)
-    pure $ xs !! n
+  [] -> error "Hedgehog.Gen.element: used with empty Foldable"
+  xs -> (xs !!) <$> integral (Range.constant 0 (length xs - 1))
 
 -- | Randomly selects one of the elements in the list.
 --
@@ -664,11 +614,8 @@ element fa = case toList fa of
 --   /The input list must be non-empty./
 element_ :: [a] -> Gen a
 element_ = \case
-  [] ->
-    error "Hedgehog.Gen.element: used with empty list"
-  xs -> do
-    n <- integral_ $ Range.constant 0 (length xs - 1)
-    pure $ xs !! n
+  [] -> error "Hedgehog.Gen.element: used with empty list"
+  xs -> (xs !!) <$> integral_ (Range.constant 0 (length xs - 1))
 
 -- | Randomly selects one of the generators in the list.
 --
@@ -677,10 +624,9 @@ element_ = \case
 --   /The input list must be non-empty./
 choice :: [Gen a] -> Gen a
 choice = \case
-  [] ->
-    error "Hedgehog.Gen.choice: used with empty list"
+  [] -> error "Hedgehog.Gen.choice: used with empty list"
   xs -> do
-    n <- integral $ Range.constant 0 (length xs - 1)
+    n <- integral (Range.constant 0 (length xs - 1))
     xs !! n
 
 -- | Uses a weighted distribution to randomly select one of the generators in
@@ -691,24 +637,19 @@ choice = \case
 --   /The input list must be non-empty./
 frequency :: [(Int, Gen a)] -> Gen a
 frequency = \case
-  [] ->
-    error "Hedgehog.Gen.frequency: used with empty list"
+  [] -> error "Hedgehog.Gen.frequency: used with empty list"
   xs0 -> do
     let pick n = \case
-          [] ->
-            error "Hedgehog.Gen.frequency/pick: used with empty list"
-          (k, x) : xs ->
-            if n <= k
-              then x
-              else pick (n - k) xs
+          [] -> error "Hedgehog.Gen.frequency/pick: used with empty list"
+          (k, x) : xs
+            | n <= k -> x
+            | otherwise -> pick (n - k) xs
 
-        iis =
-          scanl1 (+) (fmap fst xs0)
+    n <-
+      shrink
+        (\n -> takeWhile (< n) (scanl1 (+) (fmap fst xs0)))
+        (integral_ (Range.constant 1 (sum (fmap fst xs0))))
 
-        total =
-          sum (fmap fst xs0)
-
-    n <- shrink (\n -> takeWhile (< n) iis) $ integral_ $ Range.constant 1 total
     pick n xs0
 
 -- | Modifies combinators which choose from a list of generators, like 'choice'
@@ -749,10 +690,10 @@ frequency = \case
 --   there is a 2 in 3 chance that we will recurse again.
 recursive :: ([Gen a] -> Gen a) -> [Gen a] -> [Gen a] -> Gen a
 recursive f nonrec rec =
-  sized $ \n ->
+  sized \n ->
     if n <= 1
       then f nonrec
-      else f $ nonrec ++ fmap small rec
+      else f (nonrec ++ fmap small rec)
 
 ------------------------------------------------------------------------
 -- Combinators - Conditional
@@ -760,7 +701,7 @@ recursive f nonrec rec =
 -- | Discards the whole generator.
 discard :: Gen a
 discard =
-  fromTreeMaybeT Nothing
+  Gen \_ _ -> Nothing
 
 -- | Discards the generator if the generated value does not satisfy the
 --   predicate.
@@ -772,7 +713,8 @@ ensure p gen = do
     else discard
 
 fromPred :: (a -> Bool) -> a -> Maybe a
-fromPred p a = a <$ guard (p a)
+fromPred p a =
+  a <$ guard (p a)
 
 -- | Generates a value that satisfies a predicate.
 --
@@ -808,25 +750,17 @@ mapMaybe p gen0 =
           then discard
           else do
             (x, gen) <- freeze $ scale (2 * k +) gen0
-
             case p x of
-              Just _ ->
-                mapGen (Tree.mapMaybeT p =<<) gen
-              Nothing ->
-                try (k + 1)
+              Just _ -> mapGen (Tree.mapMaybe p =<<) gen
+              Nothing -> try (k + 1)
    in try 0
 
 -- | Runs a 'Maybe' generator until it produces a 'Just'.
 --
 --   /This is implemented using 'filter' and has the same caveats./
 just :: Gen (Maybe a) -> Gen a
-just g = do
-  mx <- filter Maybe.isJust g
-  case mx of
-    Just x ->
-      pure x
-    Nothing ->
-      error "Hedgehog.Gen.just: internal error, unexpected Nothing"
+just =
+  mapMaybe id
 
 ------------------------------------------------------------------------
 -- Combinators - Collections
@@ -834,7 +768,7 @@ just g = do
 -- | Generates a 'Nothing' some of the time.
 maybe :: Gen a -> Gen (Maybe a)
 maybe gen =
-  sized $ \n ->
+  sized \n ->
     frequency
       [ (2, pure Nothing),
         (1 + fromIntegral n, Just <$> gen)
@@ -845,7 +779,7 @@ maybe gen =
 --   As the size grows, this generator generates @Right@s more often than @Left@s.
 either :: Gen a -> Gen b -> Gen (Either a b)
 either genA genB =
-  sized $ \n ->
+  sized \n ->
     frequency
       [ (2, Left <$> genA),
         (1 + fromIntegral n, Right <$> genB)
@@ -866,10 +800,9 @@ list :: forall a. Range Int -> Gen a -> Gen [a]
 list range gen =
   let interleave :: Tree [Maybe (Tree a)] -> Tree [a]
       interleave = Tree.interleave . Maybe.catMaybes . Tree.treeValue
-   in sized $ \size ->
-        ensure (atLeast $ Range.lowerBound size range)
-          . mapGen (fmap interleave)
-          $ do
+   in sized \size ->
+        ensure (atLeast $ Range.lowerBound size range) $
+          mapGen (fmap interleave) $ do
             n <- integral_ range
             replicateM n (toTreeMaybeT gen)
 
@@ -883,10 +816,8 @@ nonEmpty :: Range Int -> Gen a -> Gen (NonEmpty a)
 nonEmpty range gen = do
   xs <- list (fmap (max 1) range) gen
   case xs of
-    [] ->
-      error "Hedgehog.Gen.nonEmpty: internal error, generated empty list"
-    _ ->
-      pure $ NonEmpty.fromList xs
+    [] -> error "Hedgehog.Gen.nonEmpty: internal error, generated empty list"
+    _ -> pure $ NonEmpty.fromList xs
 
 -- | Generates a set using a 'Range' to determine the length.
 --
@@ -895,7 +826,7 @@ nonEmpty range gen = do
 --   /the required set size./
 set :: (Ord a) => Range Int -> Gen a -> Gen (Set a)
 set range gen =
-  fmap Map.keysSet . map range $ fmap (,()) gen
+  Map.keysSet <$> map range (fmap (,()) gen)
 
 -- | Generates a map using a 'Range' to determine the length.
 --
@@ -904,7 +835,7 @@ set range gen =
 --   /items to satify the required map size./
 map :: (Ord k) => Range Int -> Gen (k, v) -> Gen (Map k v)
 map range gen =
-  sized $ \size ->
+  sized \size ->
     ensure ((>= Range.lowerBound size range) . Map.size)
       . fmap Map.fromList
       . (sequence =<<)
@@ -922,10 +853,8 @@ uniqueByKey n gen =
           else
             replicateM n (freeze gen) >>= \kvs ->
               case uniqueInsert n xs0 (fmap (first fst) kvs) of
-                Left xs ->
-                  pure $ Map.elems xs
-                Right xs ->
-                  try (k + 1) xs
+                Left xs -> pure $ Map.elems xs
+                Right xs -> try (k + 1) xs
    in try (0 :: Int) Map.empty
 
 uniqueInsert :: (Ord k) => Int -> Map k v -> [(k, v)] -> Either (Map k v) (Map k v)
@@ -933,17 +862,14 @@ uniqueInsert n xs kvs0 =
   if Map.size xs >= n
     then Left xs
     else case kvs0 of
-      [] ->
-        Right xs
-      (k, v) : kvs ->
-        uniqueInsert n (Map.insertWith (\x _ -> x) k v xs) kvs
+      [] -> Right xs
+      (k, v) : kvs -> uniqueInsert n (Map.insertWith (\x _ -> x) k v xs) kvs
 
 -- | Check that list contains at least a certain number of elements.
 atLeast :: Int -> [a] -> Bool
-atLeast n =
-  if n == 0
-    then const True
-    else not . null . drop (n - 1)
+atLeast n
+  | n == 0 = const True
+  | otherwise = not . null . drop (n - 1)
 
 ------------------------------------------------------------------------
 -- Combinators - Subterms
@@ -976,16 +902,14 @@ deriving instance Traversable (Vec n)
 --   shrink the list itself before trying to shrink the values inside the list.
 freeze :: Gen a -> Gen (a, Gen a)
 freeze gen =
-  Gen $ \size seed -> do
+  Gen \size seed -> do
     Tree.Tree x xs <- runGen size seed gen
     Just (Tree.singleton (x, fromTreeMaybeT . Just $ Tree x xs))
 
 shrinkSubterms :: Subterms n a -> [Subterms n a]
 shrinkSubterms = \case
-  One _ ->
-    []
-  All xs ->
-    fmap One $ toList xs
+  One _ -> []
+  All xs -> fmap One $ toList xs
 
 genSubterms :: Vec n (Gen a) -> Gen (Subterms n a)
 genSubterms =
@@ -996,10 +920,8 @@ genSubterms =
 
 fromSubterms :: (Applicative m) => (Vec n a -> m a) -> Subterms n a -> m a
 fromSubterms f = \case
-  One x ->
-    pure x
-  All xs ->
-    f xs
+  One x -> pure x
+  All xs -> f xs
 
 -- | Constructs a generator from a number of sub-term generators.
 --
@@ -1013,48 +935,42 @@ subtermMVec gs f =
 --   /Shrinks to the sub-term if possible./
 subtermM :: Gen a -> (a -> Gen a) -> Gen a
 subtermM gx f =
-  subtermMVec (gx :. Nil) $ \(x :. Nil) ->
-    f x
+  subtermMVec (gx :. Nil) \(x :. Nil) -> f x
 
 -- | Constructs a generator from a sub-term generator.
 --
 --   /Shrinks to the sub-term if possible./
 subterm :: Gen a -> (a -> a) -> Gen a
 subterm gx f =
-  subtermM gx $ \x ->
-    pure (f x)
+  subtermM gx \x -> pure (f x)
 
 -- | Constructs a generator from two sub-term generators.
 --
 --   /Shrinks to one of the sub-terms if possible./
 subtermM2 :: Gen a -> Gen a -> (a -> a -> Gen a) -> Gen a
 subtermM2 gx gy f =
-  subtermMVec (gx :. gy :. Nil) $ \(x :. y :. Nil) ->
-    f x y
+  subtermMVec (gx :. gy :. Nil) \(x :. y :. Nil) -> f x y
 
 -- | Constructs a generator from two sub-term generators.
 --
 --   /Shrinks to one of the sub-terms if possible./
 subterm2 :: Gen a -> Gen a -> (a -> a -> a) -> Gen a
 subterm2 gx gy f =
-  subtermM2 gx gy $ \x y ->
-    pure (f x y)
+  subtermM2 gx gy \x y -> pure (f x y)
 
 -- | Constructs a generator from three sub-term generators.
 --
 --   /Shrinks to one of the sub-terms if possible./
 subtermM3 :: Gen a -> Gen a -> Gen a -> (a -> a -> a -> Gen a) -> Gen a
 subtermM3 gx gy gz f =
-  subtermMVec (gx :. gy :. gz :. Nil) $ \(x :. y :. z :. Nil) ->
-    f x y z
+  subtermMVec (gx :. gy :. gz :. Nil) \(x :. y :. z :. Nil) -> f x y z
 
 -- | Constructs a generator from three sub-term generators.
 --
 --   /Shrinks to one of the sub-terms if possible./
 subterm3 :: Gen a -> Gen a -> Gen a -> (a -> a -> a -> a) -> Gen a
 subterm3 gx gy gz f =
-  subtermM3 gx gy gz $ \x y z ->
-    pure (f x y z)
+  subtermM3 gx gy gz \x y z -> pure (f x y z)
 
 ------------------------------------------------------------------------
 -- Combinators - Combinations & Permutations
@@ -1117,10 +1033,8 @@ shuffleSeq xs =
       -- but I haven't actually tested that. It's certainly easier to see
       -- what's going on.
       case Seq.lookup n xs of
-        Just y ->
-          (y Seq.<|) <$> shuffleSeq (Seq.deleteAt n xs)
-        Nothing ->
-          error "Hedgehog.Gen.shuffleSeq: internal error, lookup in empty sequence"
+        Just y -> (y Seq.<|) <$> shuffleSeq (Seq.deleteAt n xs)
+        Nothing -> error "Hedgehog.Gen.shuffleSeq: internal error, lookup in empty sequence"
 
 ------------------------------------------------------------------------
 -- Sampling
@@ -1187,9 +1101,7 @@ printWith size seed gen = do
       putStrLn "=== Outcome ==="
       putStrLn (show x)
       putStrLn "=== Shrinks ==="
-
-      for_ ss $ \s ->
-        putStrLn (show (Tree.treeValue s))
+      for_ ss (putStrLn . show . Tree.treeValue)
 
 -- | Run a generator with a random seed and print the resulting shrink tree.
 --
@@ -1218,15 +1130,12 @@ printTree gen = do
 --   Use 'printTree' to generate a value from a random seed.
 printTreeWith :: (Show a) => Size -> Seed -> Gen a -> IO ()
 printTreeWith size seed gen = do
-  putStr $
-    renderTree size seed gen
+  putStr (renderTree size seed gen)
 
 -- | Render the shrink tree produced by a generator, for the given size and
 --   seed.
 renderTree :: (Show a) => Size -> Seed -> Gen a -> String
 renderTree size seed gen =
   case runGen size seed gen of
-    Nothing ->
-      "<discard>"
-    Just x ->
-      Tree.render (fmap show x)
+    Nothing -> "<discard>"
+    Just x -> Tree.render (fmap show x)

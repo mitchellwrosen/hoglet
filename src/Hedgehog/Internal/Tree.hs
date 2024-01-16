@@ -56,29 +56,24 @@ expand f (Tree x xs) =
 --
 --   /@prune 0@ will throw away all of a tree's children./
 prune :: Int -> Tree a -> Tree a
-prune n (Tree x xs) =
-  if n <= 0
-    then Tree x []
-    else Tree x (map (prune (n - 1)) xs)
+prune n (Tree x xs)
+  | n <= 0 = Tree x []
+  | otherwise = Tree x (map (prune (n - 1)) xs)
 
 mapMaybe :: (a -> Maybe b) -> Tree a -> Maybe (Tree b)
-mapMaybe p (Tree x xs) = do
+mapMaybe p (Tree x xs) =
   Tree <$> p x <*> Just (flattenForest p xs)
 
 flattenTree :: (a -> Maybe b) -> Tree a -> [Tree b]
 flattenTree p (Tree x ys0) =
-  let ys =
-        flattenForest p ys0
+  let ys = flattenForest p ys0
    in case p x of
-        Just x' ->
-          [Tree x' ys]
-        Nothing ->
-          ys
+        Just x' -> [Tree x' ys]
+        Nothing -> ys
 
 flattenForest :: (a -> Maybe b) -> [Tree a] -> [Tree b]
 flattenForest =
-  concatMap
-    . flattenTree
+  concatMap . flattenTree
 
 consChild :: a -> Tree a -> Tree a
 consChild a (Tree x xs) =
@@ -96,11 +91,10 @@ consChild a (Tree x xs) =
 --   ]
 splits :: [a] -> [([a], a, [a])]
 splits xs0 =
-  let go (front : fronts) (x : xs) =
-        (front, x, xs) : go fronts xs
-      go _ _ =
-        []
-   in go (List.inits xs0) xs0
+  go (List.inits xs0) xs0
+  where
+    go (front : fronts) (x : xs) = (front, x, xs) : go fronts xs
+    go _ _ = []
 
 -- | @removes n@ computes all ways we can remove chunks of size @n@ from a list
 --
@@ -134,12 +128,8 @@ shrinkOne ts = do
   [interleave (xs ++ [y1] ++ zs)]
 
 interleave :: [Tree a] -> Tree [a]
-interleave ts =
-  Tree (fmap treeValue ts) $
-    concat
-      [ dropSome ts,
-        shrinkOne ts
-      ]
+interleave xs =
+  Tree (map treeValue xs) (dropSome xs ++ shrinkOne xs)
 
 ------------------------------------------------------------------------
 -- NodeT/TreeT instances
@@ -147,27 +137,23 @@ interleave ts =
 instance Applicative Tree where
   pure x =
     Tree x []
-  (<*>) (Tree ab tabs) na@(Tree a tas) =
-    Tree (ab a) $
-      map (<*> na) tabs ++ map (fmap ab) tas
+  Tree ab tabs <*> na@(Tree a tas) =
+    Tree (ab a) (map (<*> na) tabs ++ map (fmap ab) tas)
 
 instance Monad Tree where
   return =
     pure
 
-  (>>=) (Tree x xs) k =
-    case k x of
-      Tree y ys ->
-        Tree y $
-          map (>>= k) xs ++ ys
+  Tree x xs >>= k =
+    let Tree y ys = k x
+     in Tree y (map (>>= k) xs ++ ys)
 
 zipTreeT :: forall a b. Tree a -> Tree b -> Tree (a, b)
-zipTreeT l0@(Tree a ls) r0@(Tree b rs) =
-  Tree (a, b) $
-    concat
-      [ [zipTreeT l1 r0 | l1 <- ls],
-        [zipTreeT l0 r1 | r1 <- rs]
-      ]
+zipTreeT x y =
+  Tree (treeValue x, treeValue y) (xs ++ ys)
+  where
+    xs = [zipTreeT x' y | x' <- treeChildren x]
+    ys = [zipTreeT x y' | y' <- treeChildren y]
 
 ------------------------------------------------------------------------
 -- Show/Show1 instances
@@ -178,15 +164,7 @@ instance (Show a) => Show (Tree a) where
 
 instance Show1 Tree where
   liftShowsPrec sp sl d (Tree x xs) =
-    let sp1 =
-          liftShowsPrec sp sl
-
-        sl1 =
-          liftShowList sp sl
-
-        sp2 =
-          liftShowsPrec sp1 sl1
-     in showsBinaryWith sp sp2 "Tree" d x xs
+    showsBinaryWith sp (liftShowsPrec (liftShowsPrec sp sl) (liftShowList sp sl)) "Tree" d x xs
 
 ------------------------------------------------------------------------
 -- Pretty Printing
@@ -202,22 +180,16 @@ renderTreeTLines (Tree x xs0) = do
 renderNodeT :: String -> String
 renderNodeT xs =
   case xs of
-    [_] ->
-      ' ' : xs
-    _ ->
-      xs
+    [_] -> ' ' : xs
+    _ -> xs
 
 renderForestLines :: [Tree String] -> [String]
 renderForestLines xs0 =
-  let shift hd other =
-        zipWith (++) (hd : repeat other)
+  let shift hd other = zipWith (++) (hd : repeat other)
    in case xs0 of
-        [] ->
-          []
-        [x] ->
-          shift " └╼" "   " (renderTreeTLines x)
-        x : xs ->
-          shift " ├╼" " │ " (renderTreeTLines x) ++ (renderForestLines xs)
+        [] -> []
+        [x] -> shift " └╼" "   " (renderTreeTLines x)
+        x : xs -> shift " ├╼" " │ " (renderTreeTLines x) ++ (renderForestLines xs)
 
 -- | Render a tree of strings.
 render :: Tree String -> String

@@ -80,57 +80,36 @@ valueDiff x y =
       (List xs, List ys)
         | length xs == length ys ->
             ValueList (zipWith valueDiff xs ys)
-      _ ->
-        ValueDiff x y
+      _ -> ValueDiff x y
 
 takeLeft :: ValueDiff -> Value
 takeLeft = \case
-  ValueCon n xs ->
-    Con n (fmap takeLeft xs)
-  ValueRec n nxs ->
-    Rec n (fmap (second takeLeft) nxs)
-  ValueTuple xs ->
-    Tuple (fmap takeLeft xs)
-  ValueList xs ->
-    List (fmap takeLeft xs)
-  ValueSame x ->
-    x
-  ValueDiff x _ ->
-    x
+  ValueCon n xs -> Con n (fmap takeLeft xs)
+  ValueRec n nxs -> Rec n (fmap (second takeLeft) nxs)
+  ValueTuple xs -> Tuple (fmap takeLeft xs)
+  ValueList xs -> List (fmap takeLeft xs)
+  ValueSame x -> x
+  ValueDiff x _ -> x
 
 takeRight :: ValueDiff -> Value
 takeRight = \case
-  ValueCon n xs ->
-    Con n (fmap takeRight xs)
-  ValueRec n nxs ->
-    Rec n (fmap (second takeRight) nxs)
-  ValueTuple xs ->
-    Tuple (fmap takeRight xs)
-  ValueList xs ->
-    List (fmap takeRight xs)
-  ValueSame x ->
-    x
-  ValueDiff _ x ->
-    x
+  ValueCon n xs -> Con n (fmap takeRight xs)
+  ValueRec n nxs -> Rec n (fmap (second takeRight) nxs)
+  ValueTuple xs -> Tuple (fmap takeRight xs)
+  ValueList xs -> List (fmap takeRight xs)
+  ValueSame x -> x
+  ValueDiff _ x -> x
 
 mkLineDiff :: Int -> String -> DocDiff -> [LineDiff]
 mkLineDiff indent0 prefix0 diff =
-  let mkLinePrefix indent =
-        spaces indent0 ++ prefix0 ++ spaces indent
-
-      mkLineIndent indent =
-        indent0 + length prefix0 + indent
+  let mkLinePrefix indent = spaces indent0 ++ prefix0 ++ spaces indent
+      mkLineIndent indent = indent0 + length prefix0 + indent
    in case diff of
-        DocSame indent x ->
-          [LineSame $ mkLinePrefix indent ++ x]
-        DocRemoved indent x ->
-          [LineRemoved $ mkLinePrefix indent ++ x]
-        DocAdded indent x ->
-          [LineAdded $ mkLinePrefix indent ++ x]
-        DocOpen indent x ->
-          [LineSame $ mkLinePrefix indent ++ x]
-        DocItem _ _ [] ->
-          []
+        DocSame indent x -> [LineSame $ mkLinePrefix indent ++ x]
+        DocRemoved indent x -> [LineRemoved $ mkLinePrefix indent ++ x]
+        DocAdded indent x -> [LineAdded $ mkLinePrefix indent ++ x]
+        DocOpen indent x -> [LineSame $ mkLinePrefix indent ++ x]
+        DocItem _ _ [] -> []
         DocItem indent prefix (x@DocRemoved {} : y@DocAdded {} : xs) ->
           mkLineDiff (mkLineIndent indent) prefix x
             ++ mkLineDiff (mkLineIndent indent) prefix y
@@ -138,8 +117,7 @@ mkLineDiff indent0 prefix0 diff =
         DocItem indent prefix (x : xs) ->
           mkLineDiff (mkLineIndent indent) prefix x
             ++ concatMap (mkLineDiff (mkLineIndent (indent + length prefix)) "") xs
-        DocClose indent x ->
-          [LineSame $ spaces (mkLineIndent indent) ++ x]
+        DocClose indent x -> [LineSame $ spaces (mkLineIndent indent) ++ x]
 
 spaces :: Int -> String
 spaces indent =
@@ -147,14 +125,10 @@ spaces indent =
 
 collapseOpen :: [DocDiff] -> [DocDiff]
 collapseOpen = \case
-  DocSame indent line : DocOpen _ bra : xs ->
-    DocSame indent (line ++ " " ++ bra) : collapseOpen xs
-  DocItem indent prefix xs : ys ->
-    DocItem indent prefix (collapseOpen xs) : collapseOpen ys
-  x : xs ->
-    x : collapseOpen xs
-  [] ->
-    []
+  DocSame indent line : DocOpen _ bra : xs -> DocSame indent (line ++ " " ++ bra) : collapseOpen xs
+  DocItem indent prefix xs : ys -> DocItem indent prefix (collapseOpen xs) : collapseOpen ys
+  x : xs -> x : collapseOpen xs
+  [] -> []
 
 dropLeadingSep :: [DocDiff] -> [DocDiff]
 dropLeadingSep = \case
@@ -162,15 +136,12 @@ dropLeadingSep = \case
     DocOpen oindent bra : DocItem (indent + length prefix) "" (dropLeadingSep xs) : dropLeadingSep ys
   DocItem indent prefix xs : ys ->
     DocItem indent prefix (dropLeadingSep xs) : dropLeadingSep ys
-  x : xs ->
-    x : dropLeadingSep xs
-  [] ->
-    []
+  x : xs -> x : dropLeadingSep xs
+  [] -> []
 
 mkDocDiff :: Int -> ValueDiff -> [DocDiff]
 mkDocDiff indent = \case
-  ValueSame x ->
-    same indent (renderValue x)
+  ValueSame x -> same indent (renderValue x)
   diff
     | x <- takeLeft diff,
       y <- takeRight diff,
@@ -201,10 +172,8 @@ mkDocDiff indent = \case
 oneLiner :: Value -> Bool
 oneLiner x =
   case lines (renderValue x) of
-    _ : _ : _ ->
-      False
-    _ ->
-      True
+    _ : _ : _ -> False
+    _ -> True
 
 same :: Int -> String -> [DocDiff]
 same indent =

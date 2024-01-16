@@ -48,22 +48,16 @@ data RunnerConfig = RunnerConfig
 findM :: (Monad m) => [a] -> b -> (a -> m (Maybe b)) -> m b
 findM xs0 def p =
   case xs0 of
-    [] ->
-      return def
+    [] -> return def
     x0 : xs ->
-      p x0 >>= \m ->
-        case m of
-          Nothing ->
-            findM xs def p
-          Just x ->
-            return x
+      p x0 >>= \case
+        Nothing -> findM xs def p
+        Just x -> return x
 
 isFailure :: Tree (Either x a, b) -> Bool
 isFailure = \case
-  Tree (Left _, _) _ ->
-    True
-  _ ->
-    False
+  Tree (Left _, _) _ -> True
+  _ -> False
 
 takeSmallest ::
   ShrinkCount ->
@@ -77,10 +71,8 @@ takeSmallest shrinks0 (ShrinkPath shrinkPath0) shrinkLimit updateUI =
         Tree (x, (Journal logs)) xs ->
           case x of
             Left (Failure loc err mdiff) -> do
-              let shrinkPath =
-                    ShrinkPath $ reverse revShrinkPath
-                  failure =
-                    mkFailure shrinks shrinkPath Nothing loc err mdiff (reverse logs)
+              let shrinkPath = ShrinkPath $ reverse revShrinkPath
+                  failure = mkFailure shrinks shrinkPath Nothing loc err mdiff (reverse logs)
 
               updateUI $ Shrinking failure
 
@@ -112,20 +104,15 @@ skipToShrink (ShrinkPath shrinkPath) updateUI =
         Tree (x, (Journal logs)) _ ->
           case x of
             Left (Failure loc err mdiff) -> do
-              let failure =
-                    mkFailure shrinks (ShrinkPath shrinkPath) Nothing loc err mdiff (reverse logs)
-
+              let failure = mkFailure shrinks (ShrinkPath shrinkPath) Nothing loc err mdiff (reverse logs)
               updateUI $ Shrinking failure
               pure $ Failed failure
-            Right () ->
-              return OK
+            Right () -> return OK
       loop shrinks (s0 : ss) = \case
         Tree _ xs ->
           case drop s0 xs of
-            [] ->
-              pure GaveUp
-            (x : _) -> do
-              loop (shrinks + 1) ss x
+            [] -> pure GaveUp
+            (x : _) -> do loop (shrinks + 1) ss x
    in maybe (pure GaveUp) (loop 0 shrinkPath)
 
 checkReport ::
@@ -193,16 +180,12 @@ checkReport cfg size0 seed0 test updateUI = do
                 EarlyTermination _ _ ->
                   tests >= fromIntegral defaultMinTests
                     && (coverageReached || coverageUnreachable)
-                NoEarlyTermination _ _ ->
-                  tests >= fromIntegral minTests
-                NoConfidenceTermination _ ->
-                  tests >= fromIntegral minTests
+                NoEarlyTermination _ _ -> tests >= fromIntegral minTests
+                NoConfidenceTermination _ -> tests >= fromIntegral minTests
 
-            labelsCovered =
-              coverageSuccess tests coverage0
+            labelsCovered = coverageSuccess tests coverage0
 
-            successReport =
-              Report tests discards coverage0 seed0 OK
+            successReport = Report tests discards coverage0 seed0 OK
 
             failureReport message =
               Report tests discards coverage0 seed0 . Failed $
@@ -301,19 +284,14 @@ checkRegion region color name size seed prop = do
     checkReport (propertyConfig prop) size seed (propertyTest prop) $ \progress -> do
       ppprogress <- renderProgress color name progress
       case reportStatus progress of
-        Running ->
-          setRegion region ppprogress
-        Shrinking _ ->
-          openRegion region ppprogress
+        Running -> setRegion region ppprogress
+        Shrinking _ -> openRegion region ppprogress
 
   ppresult <- renderResult color name result
   case reportStatus result of
-    Failed _ ->
-      openRegion region ppresult
-    GaveUp ->
-      openRegion region ppresult
-    OK ->
-      setRegion region ppresult
+    Failed _ -> openRegion region ppresult
+    GaveUp -> openRegion region ppresult
+    OK -> setRegion region ppresult
 
   pure result
 
@@ -340,7 +318,7 @@ recheck :: Size -> Seed -> Property -> IO ()
 recheck size seed prop0 = do
   color <- detectColor
   let prop = withTests 1 prop0
-  _ <- displayRegion $ \region ->
+  _ <- displayRegion \region ->
     checkRegion region color Nothing size seed prop
   pure ()
 
@@ -348,7 +326,7 @@ recheckAt :: Seed -> Skip -> Property -> IO ()
 recheckAt seed skip prop0 = do
   color <- detectColor
   let prop = withSkip skip prop0
-  _ <- displayRegion $ \region ->
+  _ <- displayRegion \region ->
     checkRegion region color Nothing 0 seed prop
   pure ()
 
@@ -374,45 +352,34 @@ checkGroup (Group group props) = do
     svar <- atomically . TVar.newTVar $ mempty {summaryWaiting = PropertyCount (length props)}
 
     let start (TasksRemaining tasks) _ix (name, prop) = do
-          updateSummary sregion svar color $ \x ->
+          updateSummary sregion svar color \x ->
             x
-              { summaryWaiting =
-                  PropertyCount tasks,
-                summaryRunning =
-                  summaryRunning x + 1
+              { summaryWaiting = PropertyCount tasks,
+                summaryRunning = summaryRunning x + 1
               }
 
           atomically $ do
             region <-
               case verbosity of
-                Quiet ->
-                  newEmptyRegion
-                Normal ->
-                  newOpenRegion
+                Quiet -> newEmptyRegion
+                Normal -> newOpenRegion
 
             moveToBottom sregion
 
             pure (name, prop, region)
 
         finish (_name, _prop, _region) =
-          updateSummary sregion svar color $ \x ->
-            x
-              { summaryRunning =
-                  summaryRunning x - 1
-              }
+          updateSummary sregion svar color \x ->
+            x {summaryRunning = summaryRunning x - 1}
 
         finalize (_name, _prop, region) =
           finishRegion region
 
     summary <-
       fmap (mconcat . fmap (fromResult . reportStatus)) $
-        runTasks n props start finish finalize $ \(name, prop, region) -> do
+        runTasks n props start finish finalize \(name, prop, region) -> do
           result <- checkNamed region color (Just name) (Just seed) prop
-          updateSummary
-            sregion
-            svar
-            color
-            (<> fromResult (reportStatus result))
+          updateSummary sregion svar color (<> fromResult (reportStatus result))
           pure result
 
     updateSummary sregion svar color (const summary)

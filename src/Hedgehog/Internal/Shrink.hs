@@ -30,8 +30,7 @@ towards destination x =
         else
           let -- Halve the operands before subtracting them so they don't overflow.
               -- Consider 'minBound' and 'maxBound' for a fixed sized type like 'Int64'.
-              diff =
-                (x `quot` 2) - (destination `quot` 2)
+              diff = (x `quot` 2) - (destination `quot` 2)
            in destination `consNub` fmap (x -) (halves diff)
 
 -- | Shrink a floating-point number by edging towards a destination.
@@ -48,11 +47,8 @@ towardsFloat destination x =
   if destination == x
     then []
     else
-      let diff =
-            x - destination
-
-          ok y =
-            y /= x && not (isNaN y) && not (isInfinite y)
+      let diff = x - destination
+          ok y = y /= x && not (isNaN y) && not (isInfinite y)
        in takeWhile ok
             . fmap (x -)
             $ iterate (/ 2) diff
@@ -78,15 +74,12 @@ list xs =
 --   ["cdef","abef","abcd"]
 removes :: Int -> [a] -> [[a]]
 removes k0 xs0 =
-  let loop k n xs =
-        let (hd, tl) =
-              splitAt k xs
-         in if k > n
-              then []
-              else
-                if null tl
-                  then [[]]
-                  else tl : fmap (hd ++) (loop k (n - k) tl)
+  let loop k n xs
+        | k > n = []
+        | otherwise =
+            case splitAt k xs of
+              (_, []) -> [[]]
+              (hd, tl) -> tl : fmap (hd ++) (loop k (n - k) tl)
    in loop k0 (length xs0) xs0
 
 -- | Produce a list containing the progressive halving of an integral.
@@ -107,9 +100,7 @@ halves =
 consNub :: (Eq a) => a -> [a] -> [a]
 consNub x ys0 =
   case ys0 of
-    [] ->
-      x : []
-    y : ys ->
-      if x == y
-        then y : ys
-        else x : y : ys
+    [] -> x : []
+    y : ys
+      | x == y -> y : ys
+      | otherwise -> x : y : ys

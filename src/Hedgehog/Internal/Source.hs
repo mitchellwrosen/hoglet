@@ -32,8 +32,7 @@ data Span = Span
 getCaller :: CallStack -> Maybe Span
 getCaller stack =
   case getCallStack stack of
-    [] ->
-      Nothing
+    [] -> Nothing
     (_, x) : _ ->
       Just $
         Span
