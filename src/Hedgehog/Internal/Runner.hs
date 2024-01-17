@@ -19,7 +19,7 @@ import Data.Text (Text)
 import Data.Text qualified as Text
 import Hedgehog.Internal.Config
 import Hedgehog.Internal.Gen (runGen)
-import Hedgehog.Internal.Property (CoverCount (..), Coverage (..), DiscardCount (..), Failure (..), Group (..), Journal (..), Property (..), PropertyConfig (..), PropertyCount (..), ShrinkCount (..), ShrinkPath (..), TerminationCriteria (..), Test, TestCount (..), confidenceFailure, confidenceSuccess, coverageSuccess, defaultMinTests, journalCoverage, runTest, withSkip, withTests)
+import Hedgehog.Internal.Property (CoverCount (..), Coverage (..), DiscardCount (..), Failure (..), Group (..), Journal (..), Property (..), PropertyConfig (..), PropertyCount (..), ShrinkCount (..), ShrinkPath (..), Test, TestCount (..), coverageSuccess, journalCoverage, runTest, withSkip, withTests)
 import Hedgehog.Internal.Queue
 import Hedgehog.Internal.Range (Size)
 import Hedgehog.Internal.Region
@@ -127,37 +127,11 @@ checkReport cfg size0 seed0 test updateUI = do
 
   let (mSkipToTest, mSkipToShrink) =
         case skip of
-          SkipNothing ->
-            (Nothing, Nothing)
-          SkipToTest t d ->
-            (Just (t, d), Nothing)
-          SkipToShrink t d s ->
-            (Just (t, d), Just s)
+          SkipNothing -> (Nothing, Nothing)
+          SkipToTest t d -> (Just (t, d), Nothing)
+          SkipToShrink t d s -> (Just (t, d), Just s)
 
-      terminationCriteria =
-        propertyTerminationCriteria cfg
-
-      (confidence, minTests) =
-        case terminationCriteria of
-          EarlyTermination c t -> (Just c, t)
-          NoEarlyTermination c t -> (Just c, t)
-          NoConfidenceTermination t -> (Nothing, t)
-
-      successVerified count coverage =
-        count `mod` 100 == 0
-          &&
-          -- If the user wants a statistically significant result, this function
-          -- will run a confidence check. Otherwise, it will default to checking
-          -- the percentage of encountered labels
-          maybe False (\c -> confidenceSuccess count c coverage) confidence
-
-      failureVerified count coverage =
-        -- Will be true if we can statistically verify that our coverage was
-        -- inadequate.
-        -- Testing only on 100s to minimise repeated measurement statistical
-        -- errors.
-        count `mod` 100 == 0
-          && maybe False (\c -> confidenceFailure count c coverage) confidence
+      testLimit = propertyTestLimit cfg
 
       loop ::
         TestCount ->
@@ -169,22 +143,8 @@ checkReport cfg size0 seed0 test updateUI = do
       loop !tests !discards !size !seed !coverage0 = do
         updateUI $ Report tests discards coverage0 seed0 Running
 
-        let coverageReached =
-              successVerified tests coverage0
-
-            coverageUnreachable =
-              failureVerified tests coverage0
-
-            enoughTestsRun =
-              case terminationCriteria of
-                EarlyTermination _ _ ->
-                  tests >= fromIntegral defaultMinTests
-                    && (coverageReached || coverageUnreachable)
-                NoEarlyTermination _ _ -> tests >= fromIntegral minTests
-                NoConfidenceTermination _ -> tests >= fromIntegral minTests
-
+        let enoughTestsRun = tests >= TestCount testLimit
             labelsCovered = coverageSuccess tests coverage0
-
             successReport = Report tests discards coverage0 seed0 OK
 
             failureReport message =
@@ -198,13 +158,6 @@ checkReport cfg size0 seed0 test updateUI = do
                   Nothing
                   []
 
-            confidenceReport =
-              if coverageReached && labelsCovered
-                then successReport
-                else
-                  failureReport $
-                    "Test coverage cannot be reached after " <> show tests <> " tests"
-
         if size > 99
           then -- size has reached limit, reset to 0
             loop tests discards 0 seed coverage0
@@ -216,12 +169,10 @@ checkReport cfg size0 seed0 test updateUI = do
               -- If we have early termination, then we need to check coverageReached /
               -- coverageUnreachable. If we skip tests, we ignore coverage.
 
-                if isJust mSkipToTest
-                  then pure successReport
-                  else pure $ case terminationCriteria of
-                    EarlyTermination _ _ -> confidenceReport
-                    NoEarlyTermination _ _ -> confidenceReport
-                    NoConfidenceTermination _ ->
+                pure
+                  if isJust mSkipToTest
+                    then successReport
+                    else
                       if labelsCovered
                         then successReport
                         else
@@ -358,7 +309,7 @@ checkGroup (Group group props) = do
                 summaryRunning = summaryRunning x + 1
               }
 
-          atomically $ do
+          atomically do
             region <-
               case verbosity of
                 Quiet -> newEmptyRegion

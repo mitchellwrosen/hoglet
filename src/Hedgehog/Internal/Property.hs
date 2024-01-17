@@ -43,7 +43,6 @@ module Hedgehog.Internal.Property
     eval,
     evalNF,
     evalEither,
-    evalExceptT,
     evalMaybe,
 
     -- * Coverage
@@ -62,14 +61,6 @@ module Hedgehog.Internal.Property
     CoverCount (..),
     CoverPercentage (..),
 
-    -- * Confidence
-    Confidence (..),
-    TerminationCriteria (..),
-    confidenceSuccess,
-    confidenceFailure,
-    withConfidence,
-    verifiedTermination,
-
     -- * Internal
     failWith,
   )
@@ -77,15 +68,11 @@ where
 
 import Control.DeepSeq (NFData, rnf)
 import Control.Exception (SomeException (..), displayException)
-import Control.Monad.Trans.Except (ExceptT (..), runExceptT)
 import Data.Char qualified as Char
 import Data.Functor (($>), (<&>))
-import Data.Int (Int64)
 import Data.List qualified as List
 import Data.Map (Map)
 import Data.Map.Strict qualified as Map
-import Data.Number.Erf (invnormcdf)
-import Data.Ratio ((%))
 import Data.String (IsString (..))
 import Data.Text (Text)
 import Data.Typeable (typeOf)
@@ -135,20 +122,11 @@ instance Monad Test where
           let !j = jx <> jy
           pure (y, j)
 
--- | The acceptable occurrence of false positives
---
---   Example, @Confidence 10^9@ would mean that you'd accept a false positive
---   for 1 in 10^9 tests.
-newtype Confidence = Confidence
-  { unConfidence :: Int64
-  }
-  deriving (Eq, Ord, Show, Num)
-
 -- | Configuration for a property test.
 data PropertyConfig = PropertyConfig
   { propertyDiscardLimit :: !Int,
     propertyShrinkLimit :: !Int,
-    propertyTerminationCriteria :: !TerminationCriteria,
+    propertyTestLimit :: !Int,
     -- | If this is 'Nothing', we take the Skip from the environment variable
     --   @HEDGEHOG_SKIP@.
     propertySkip :: Maybe Skip
@@ -328,12 +306,6 @@ newtype PropertyCount
   = PropertyCount Int
   deriving (Eq, Ord, Show, Num, Enum, Real, Integral)
 
-data TerminationCriteria
-  = EarlyTermination Confidence Int
-  | NoEarlyTermination Confidence Int
-  | NoConfidenceTermination Int
-  deriving (Eq, Ord, Show)
-
 --
 -- FIXME This whole Log/Failure thing could be a lot more structured to allow
 -- FIXME for richer user controlled error messages, think Doc. Ideally we'd
@@ -439,13 +411,13 @@ newtype Coverage a = Coverage
 -- | Log some information which might be relevant to a potential test failure.
 writeLog :: Log -> Test ()
 writeLog x =
-  Test (pure (pure (), (Journal [x])))
+  Test (pure (Right (), (Journal [x])))
 
 -- | Fail the test with an error message, useful for building other failure
 --   combinators.
 failWith :: (HasCallStack) => Maybe Diff -> String -> Test a
 failWith mdiff msg =
-  Test (pure (Left $ Failure (getCaller callStack) msg mdiff, mempty))
+  Test (pure (Left (Failure (getCaller callStack) msg mdiff), mempty))
 
 -- | Annotates the source code with a message that might be useful for
 --   debugging a test failure.
@@ -580,12 +552,6 @@ evalEither = \case
   Left x -> withFrozenCallStack $ failWith Nothing $ showPretty x
   Right x -> pure x
 
--- | Fails the test if the 'ExceptT' is 'Left', otherwise returns the value in
---   the 'Right'.
-evalExceptT :: (Show x, HasCallStack) => ExceptT x Test a -> Test a
-evalExceptT m =
-  withFrozenCallStack evalEither =<< runExceptT m
-
 -- | Fails the test if the 'Maybe' is 'Nothing', otherwise returns the value in
 --   the 'Just'.
 evalMaybe :: (Show a, HasCallStack) => Maybe a -> Test a
@@ -626,7 +592,7 @@ defaultConfig =
   PropertyConfig
     { propertyDiscardLimit = 100,
       propertyShrinkLimit = 1000,
-      propertyTerminationCriteria = NoConfidenceTermination defaultMinTests,
+      propertyTestLimit = defaultMinTests,
       propertySkip = Nothing
     }
 
@@ -634,37 +600,10 @@ defaultConfig =
 defaultMinTests :: Int
 defaultMinTests = 100
 
--- | The default confidence allows one false positive in 10^9 tests
-defaultConfidence :: Confidence
-defaultConfidence = 10 ^ (9 :: Int)
-
 -- | Map a config modification function over a property.
 mapConfig :: (PropertyConfig -> PropertyConfig) -> Property -> Property
 mapConfig f (Property cfg t) =
   Property (f cfg) t
-
--- | Make sure that the result is statistically significant in accordance to
---   the passed 'Confidence'
-withConfidence :: Confidence -> Property -> Property
-withConfidence c =
-  let setConfidence = \case
-        NoEarlyTermination _ tests -> NoEarlyTermination c tests
-        NoConfidenceTermination tests -> NoEarlyTermination c tests
-        EarlyTermination _ tests -> EarlyTermination c tests
-   in mapConfig $ \config@PropertyConfig {..} ->
-        config
-          { propertyTerminationCriteria =
-              setConfidence propertyTerminationCriteria
-          }
-
-verifiedTermination :: Property -> Property
-verifiedTermination =
-  mapConfig $ \config@PropertyConfig {..} ->
-    let newTerminationCriteria = case propertyTerminationCriteria of
-          NoEarlyTermination c tests -> EarlyTermination c tests
-          NoConfidenceTermination tests -> EarlyTermination defaultConfidence tests
-          EarlyTermination c tests -> EarlyTermination c tests
-     in config {propertyTerminationCriteria = newTerminationCriteria}
 
 -- | Set the number of times a property should be executed before it is considered
 --   successful.
@@ -674,35 +613,29 @@ verifiedTermination =
 --   will only be checked once.
 withTests :: Int -> Property -> Property
 withTests n =
-  let setTestLimit tests = \case
-        NoEarlyTermination c _ -> NoEarlyTermination c tests
-        NoConfidenceTermination _ -> NoConfidenceTermination tests
-        EarlyTermination c _ -> EarlyTermination c tests
-   in mapConfig $ \config@PropertyConfig {..} ->
-        config {propertyTerminationCriteria = setTestLimit n propertyTerminationCriteria}
+  mapConfig \config -> config {propertyTestLimit = n}
 
 -- | Set the number of times a property is allowed to discard before the test
 --   runner gives up.
 withDiscards :: Int -> Property -> Property
 withDiscards n =
-  mapConfig $ \config -> config {propertyDiscardLimit = n}
+  mapConfig \config -> config {propertyDiscardLimit = n}
 
 -- | Set the number of times a property is allowed to shrink before the test
 --   runner gives up and prints the counterexample.
 withShrinks :: Int -> Property -> Property
 withShrinks n =
-  mapConfig $ \config -> config {propertyShrinkLimit = n}
+  mapConfig \config -> config {propertyShrinkLimit = n}
 
 -- | Set the target that a property will skip to before it starts to run.
 withSkip :: Skip -> Property -> Property
 withSkip s =
-  mapConfig $ \config -> config {propertySkip = Just s}
+  mapConfig \config -> config {propertySkip = Just s}
 
 -- | Creates a property with the default configuration.
 property :: (HasCallStack) => Test () -> Property
 property m =
-  Property defaultConfig $
-    withFrozenCallStack m
+  Property defaultConfig (withFrozenCallStack m)
 
 ------------------------------------------------------------------------
 -- Coverage
@@ -763,49 +696,6 @@ coverageSuccess tests =
 coverageFailures :: TestCount -> Coverage CoverCount -> [Label CoverCount]
 coverageFailures tests (Coverage kvs) =
   List.filter (not . labelCovered tests) (Map.elems kvs)
-
--- | Is true when the test coverage satisfies the specified 'Confidence'
---   contstraint for all 'Coverage CoverCount's
-confidenceSuccess :: TestCount -> Confidence -> Coverage CoverCount -> Bool
-confidenceSuccess tests confidence =
-  let assertLow :: Label CoverCount -> Bool
-      assertLow coverCount@MkLabel {..} =
-        fst (boundsForLabel tests confidence coverCount)
-          >= unCoverPercentage labelMinimum / 100.0
-   in and . fmap assertLow . Map.elems . coverageLabels
-
--- | Is true when there exists a label that is sure to have failed according to
---   the 'Confidence' constraint
-confidenceFailure :: TestCount -> Confidence -> Coverage CoverCount -> Bool
-confidenceFailure tests confidence =
-  let assertHigh :: Label CoverCount -> Bool
-      assertHigh coverCount@MkLabel {..} =
-        snd (boundsForLabel tests confidence coverCount)
-          < (unCoverPercentage labelMinimum / 100.0)
-   in or . fmap assertHigh . Map.elems . coverageLabels
-
-boundsForLabel :: TestCount -> Confidence -> Label CoverCount -> (Double, Double)
-boundsForLabel tests confidence MkLabel {..} =
-  wilsonBounds
-    (fromIntegral $ unCoverCount labelAnnotation)
-    (fromIntegral tests)
-    (1 / fromIntegral (unConfidence confidence))
-
--- In order to get an accurate measurement with small sample sizes, we're
--- using the Wilson score interval
--- (<https://en.wikipedia.org/wiki/Binomial_proportion_confidence_interval#Wilson_score_interval
--- wikipedia>) instead of a normal approximation interval.
-wilsonBounds :: Integer -> Integer -> Double -> (Double, Double)
-wilsonBounds positives count acceptance =
-  let p = fromRational $ positives % count
-      n = fromIntegral count
-      z = invnormcdf $ 1 - acceptance / 2
-      midpoint = p + z * z / (2 * n)
-      offset = z / (1 + z ** 2 / n) * sqrt (p * (1 - p) / n + z ** 2 / (4 * n ** 2))
-      denominator = 1 + z * z / n
-      low = (midpoint - offset) / denominator
-      high = (midpoint + offset) / denominator
-   in (low, high)
 
 fromLabel :: Label a -> Coverage a
 fromLabel x =

@@ -10,9 +10,6 @@ module Hedgehog
     recheck,
     recheckAt,
     checkGroup,
-    Confidence,
-    verifiedTermination,
-    withConfidence,
     withTests,
     withDiscards,
     withShrinks,
@@ -38,7 +35,6 @@ module Hedgehog
     eval,
     evalNF,
     evalEither,
-    evalExceptT,
     evalMaybe,
 
     -- * Coverage
@@ -52,8 +48,7 @@ where
 
 import Hedgehog.Internal.Gen (Gen)
 import Hedgehog.Internal.Property
-  ( Confidence,
-    Group (..),
+  ( Group (..),
     LabelName,
     Property,
     Skip,
@@ -67,7 +62,6 @@ import Hedgehog.Internal.Property
     discard,
     eval,
     evalEither,
-    evalExceptT,
     evalMaybe,
     evalNF,
     footnote,
@@ -76,8 +70,6 @@ import Hedgehog.Internal.Property
     forAllWith,
     label,
     property,
-    verifiedTermination,
-    withConfidence,
     withDiscards,
     withShrinks,
     withSkip,
