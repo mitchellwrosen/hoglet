@@ -27,7 +27,8 @@ module Hedgehog.Internal.Property
     PropertyCount (..),
 
     -- * TestT
-    Test (..),
+    Test,
+    runTest,
     Log (..),
     Journal (..),
     Failure (..),
@@ -71,17 +72,14 @@ module Hedgehog.Internal.Property
 
     -- * Internal
     failWith,
-    runTest,
   )
 where
 
 import Control.DeepSeq (NFData, rnf)
 import Control.Exception (SomeException (..), displayException)
-import Control.Monad.Trans.Class (MonadTrans (..))
 import Control.Monad.Trans.Except (ExceptT (..), runExceptT)
-import Control.Monad.Trans.Writer.Lazy qualified as Lazy
 import Data.Char qualified as Char
-import Data.Functor (($>))
+import Data.Functor (($>), (<&>))
 import Data.Int (Int64)
 import Data.List qualified as List
 import Data.Map (Map)
@@ -111,14 +109,31 @@ data Property = Property
   }
 
 -- | A test monad allows the assertion of expectations.
-newtype Test a = TestT
-  { unTest :: ExceptT Failure (Lazy.WriterT Journal Gen) a
+newtype Test a = Test
+  { runTest :: Gen (Either Failure a, Journal)
   }
-  deriving
-    ( Functor,
-      Applicative,
-      Monad
-    )
+  deriving stock (Functor)
+
+instance Applicative Test where
+  pure x = Test (pure (Right x, mempty))
+  Test ef <*> Test ex =
+    Test do
+      ef >>= \case
+        (Left e, jf) -> pure (Left e, jf)
+        (Right f, jf) ->
+          ex <&> \case
+            (Left e, jx) -> let !j = jf <> jx in (Left e, j)
+            (Right x, jx) -> let !j = jf <> jx in (Right (f x), j)
+
+instance Monad Test where
+  Test ex >>= f =
+    Test do
+      ex >>= \case
+        (Left e, jx) -> pure (Left e, jx)
+        (Right x, jx) -> do
+          (y, jy) <- runTest (f x)
+          let !j = jx <> jy
+          pure (y, j)
 
 -- | The acceptable occurrence of false positives
 --
@@ -244,19 +259,14 @@ skipDecompress str =
   if null str
     then Just SkipNothing
     else do
-      let (tcDcStr, spStr) =
-            span (/= ':') str
-
-          (tcStr, dcStr) =
-            span (/= '/') tcDcStr
-
+      let (tcDcStr, spStr) = span (/= ':') str
+          (tcStr, dcStr) = span (/= '/') tcDcStr
       tc <- TestCount <$> readMaybe tcStr
       dc <-
         DiscardCount
           <$> if null dcStr
             then Just 0
             else readMaybe (drop 1 dcStr)
-
       if null spStr
         then Just $ SkipToTest tc dc
         else do
@@ -278,16 +288,11 @@ shrinkPathDecompress str =
       classifyChar c = (isDigit c, isLower c, isUpper c)
 
       readSNum "" = []
-      readSNum s@(c1 : _) =
-        if isDigit c1
-          then Numeric.readInt 10 isDigit (\c -> fromEnum c - fromEnum '0') s
-          else
-            if isLower c1
-              then Numeric.readInt 26 isLower (\c -> fromEnum c - fromEnum 'a') s
-              else
-                if isUpper c1
-                  then Numeric.readInt 26 isUpper (\c -> fromEnum c - fromEnum 'A') s
-                  else []
+      readSNum s@(c1 : _)
+        | isDigit c1 = Numeric.readInt 10 isDigit (\c -> fromEnum c - fromEnum '0') s
+        | isLower c1 = Numeric.readInt 26 isLower (\c -> fromEnum c - fromEnum 'a') s
+        | isUpper c1 = Numeric.readInt 26 isUpper (\c -> fromEnum c - fromEnum 'A') s
+        | otherwise = []
 
       readNumMaybe s =
         case readSNum s of
@@ -431,28 +436,16 @@ newtype Coverage a = Coverage
 ------------------------------------------------------------------------
 -- TestT
 
-instance MonadFail Test where
-  fail err =
-    TestT . ExceptT . pure . Left $ Failure Nothing err Nothing
-
-mkTest :: Gen (Either Failure a, Journal) -> Test a
-mkTest =
-  TestT . ExceptT . Lazy.WriterT
-
-runTest :: Test a -> Gen (Either Failure a, Journal)
-runTest =
-  Lazy.runWriterT . runExceptT . unTest
-
 -- | Log some information which might be relevant to a potential test failure.
 writeLog :: Log -> Test ()
 writeLog x =
-  mkTest (pure (pure (), (Journal [x])))
+  Test (pure (pure (), (Journal [x])))
 
 -- | Fail the test with an error message, useful for building other failure
 --   combinators.
 failWith :: (HasCallStack) => Maybe Diff -> String -> Test a
 failWith mdiff msg =
-  mkTest (pure (Left $ Failure (getCaller callStack) msg mdiff, mempty))
+  Test (pure (Left $ Failure (getCaller callStack) msg mdiff, mempty))
 
 -- | Annotates the source code with a message that might be useful for
 --   debugging a test failure.
@@ -610,7 +603,7 @@ evalMaybe = \case
 --   /'Show' instance./
 forAllWith :: (HasCallStack) => (a -> String) -> Gen a -> Test a
 forAllWith render gen = do
-  x <- TestT (lift (lift gen))
+  x <- Test ((\x -> (Right x, mempty)) <$> gen)
   withFrozenCallStack $ annotate (render x)
   pure x
 
@@ -622,7 +615,7 @@ forAll gen =
 -- | Discards the current test entirely.
 discard :: Test a
 discard =
-  TestT (lift (lift Gen.discard))
+  Test Gen.discard
 
 ------------------------------------------------------------------------
 -- Property
