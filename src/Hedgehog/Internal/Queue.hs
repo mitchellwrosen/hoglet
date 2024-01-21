@@ -11,7 +11,9 @@ import Control.Concurrent (rtsSupportsBoundThreads)
 import Control.Concurrent.Async (forConcurrently)
 import Control.Concurrent.MVar (MVar)
 import Control.Concurrent.MVar qualified as MVar
+import Control.Concurrent.STM (STM)
 import Control.Monad (when)
+import Control.Monad.STM (atomically)
 import Data.Map.Strict (Map)
 import Data.Map.Strict qualified as Map
 import GHC.Conc qualified as Conc
@@ -40,7 +42,7 @@ runTasks ::
   [a] ->
   (TasksRemaining -> TaskIndex -> a -> IO b) ->
   (b -> IO ()) ->
-  (b -> IO ()) ->
+  (b -> STM ()) ->
   (b -> IO c) ->
   IO [c]
 runTasks n tasks start finish finalize runTask = do
@@ -62,9 +64,7 @@ runTasks n tasks start finish finalize runTask = do
   fmap concat . forConcurrently [1 .. max 1 n] $ \_ix ->
     worker []
 
-runActiveFinalizers ::
-  MVar (TaskIndex, Map TaskIndex (IO ())) ->
-  IO ()
+runActiveFinalizers :: MVar (TaskIndex, Map TaskIndex (STM ())) -> IO ()
 runActiveFinalizers mvar = do
   again <-
     MVar.modifyMVar mvar $ \original@(minIx, finalizers0) ->
@@ -73,16 +73,16 @@ runActiveFinalizers mvar = do
         Just ((ix, finalize), finalizers) ->
           if ix == minIx + 1
             then do
-              finalize
+              atomically finalize
               pure ((ix, finalizers), True)
             else pure (original, False)
 
   when again $ runActiveFinalizers mvar
 
 finalizeTask ::
-  MVar (TaskIndex, Map TaskIndex (IO ())) ->
+  MVar (TaskIndex, Map TaskIndex (STM ())) ->
   TaskIndex ->
-  IO () ->
+  STM () ->
   IO ()
 finalizeTask mvar ix finalize = do
   MVar.modifyMVar_ mvar $ \(minIx, finalizers) ->

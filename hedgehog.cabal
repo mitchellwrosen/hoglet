@@ -79,6 +79,7 @@ library
     DerivingStrategies
     GADTs
     LambdaCase
+    MultiWayIf
 
   default-language:
     GHC2021

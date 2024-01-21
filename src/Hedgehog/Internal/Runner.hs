@@ -158,67 +158,60 @@ checkReport cfg size0 seed0 test updateUI = do
                   Nothing
                   []
 
-        if size > 99
-          then -- size has reached limit, reset to 0
-            loop tests discards 0 seed coverage0
-          else
-            if enoughTestsRun
-              then -- at this point, we know that enough tests have been run in order to
-              -- make a decision on if this was a successful run or not
-              --
-              -- If we have early termination, then we need to check coverageReached /
-              -- coverageUnreachable. If we skip tests, we ignore coverage.
-
-                pure
-                  if isJust mSkipToTest
-                    then successReport
-                    else
-                      if labelsCovered
-                        then successReport
-                        else
-                          failureReport $
-                            "Labels not sufficently covered after " <> show tests <> " tests"
-              else
-                if discards >= fromIntegral (propertyDiscardLimit cfg)
-                  then -- we've hit the discard limit, give up
-                    pure $ Report tests discards coverage0 seed0 GaveUp
-                  else case Seed.split seed of
-                    (s0, s1) -> case (mSkipToTest, mSkipToShrink) of
-                      -- If the report says failed "after 32 tests", the test number that
-                      -- failed was 31, but we want the user to be able to skip to 32 and
-                      -- start with the one that failed.
-                      (Just (n, d), _)
-                        | n > tests + 1 ->
-                            loop (tests + 1) discards (size + 1) s1 coverage0
-                        | d > discards ->
-                            loop tests (discards + 1) (size + 1) s1 coverage0
-                      (Just _, Just shrinkPath) -> do
-                        let node = runGen size s0 . runTest $ test
+        if
+          -- size has reached limit, reset to 0
+          | size > 99 -> loop tests discards 0 seed coverage0
+          -- at this point, we know that enough tests have been run in order to
+          -- make a decision on if this was a successful run or not
+          --
+          -- If we have early termination, then we need to check coverageReached /
+          -- coverageUnreachable. If we skip tests, we ignore coverage.
+          | enoughTestsRun ->
+              pure
+                if isJust mSkipToTest
+                  then successReport
+                  else
+                    if labelsCovered
+                      then successReport
+                      else
+                        failureReport $
+                          "Labels not sufficently covered after " <> show tests <> " tests"
+          -- we've hit the discard limit, give up
+          | discards >= fromIntegral (propertyDiscardLimit cfg) ->
+              pure $ Report tests discards coverage0 seed0 GaveUp
+          | otherwise ->
+              case Seed.split seed of
+                (s0, s1) -> case (mSkipToTest, mSkipToShrink) of
+                  -- If the report says failed "after 32 tests", the test number that
+                  -- failed was 31, but we want the user to be able to skip to 32 and
+                  -- start with the one that failed.
+                  (Just (n, d), _)
+                    | n > tests + 1 -> loop (tests + 1) discards (size + 1) s1 coverage0
+                    | d > discards -> loop tests (discards + 1) (size + 1) s1 coverage0
+                  (Just _, Just shrinkPath) -> do
+                    let node = runGen size s0 . runTest $ test
+                    let mkReport :: a -> Report a
+                        mkReport = Report (tests + 1) discards coverage0 seed0
+                    mkReport <$> skipToShrink shrinkPath (updateUI . mkReport) node
+                  _ -> do
+                    let node = runGen size s0 . runTest $ test
+                    case node of
+                      Nothing -> loop tests (discards + 1) (size + 1) s1 coverage0
+                      Just (Tree (Left _, _) _) ->
                         let mkReport :: a -> Report a
                             mkReport =
                               Report (tests + 1) discards coverage0 seed0
-                        mkReport <$> skipToShrink shrinkPath (updateUI . mkReport) node
-                      _ -> do
-                        let node =
-                              runGen size s0 . runTest $ test
-                        case node of
-                          Nothing ->
-                            loop tests (discards + 1) (size + 1) s1 coverage0
-                          Just (Tree (Left _, _) _) ->
-                            let mkReport :: a -> Report a
-                                mkReport =
-                                  Report (tests + 1) discards coverage0 seed0
-                             in fmap mkReport $
-                                  takeSmallest
-                                    0
-                                    (ShrinkPath [])
-                                    (propertyShrinkLimit cfg)
-                                    (updateUI . mkReport)
-                                    node
-                          Just (Tree (Right (), journal) _) ->
-                            let coverage =
-                                  journalCoverage journal <> coverage0
-                             in loop (tests + 1) discards (size + 1) s1 coverage
+                         in fmap mkReport $
+                              takeSmallest
+                                0
+                                (ShrinkPath [])
+                                (propertyShrinkLimit cfg)
+                                (updateUI . mkReport)
+                                node
+                      Just (Tree (Right (), journal) _) ->
+                        let coverage =
+                              journalCoverage journal <> coverage0
+                         in loop (tests + 1) discards (size + 1) s1 coverage
 
   loop 0 0 size0 seed0 mempty
 
@@ -232,14 +225,14 @@ checkRegion ::
   IO (Report Result)
 checkRegion region color name size seed prop = do
   result <-
-    checkReport (propertyConfig prop) size seed (propertyTest prop) $ \progress -> do
+    checkReport (propertyConfig prop) size seed (propertyTest prop) \progress -> do
       ppprogress <- renderProgress color name progress
-      case reportStatus progress of
+      atomically case reportStatus progress of
         Running -> setRegion region ppprogress
         Shrinking _ -> openRegion region ppprogress
 
   ppresult <- renderResult color name result
-  case reportStatus result of
+  atomically case reportStatus result of
     Failed _ -> openRegion region ppresult
     GaveUp -> openRegion region ppresult
     OK -> setRegion region ppresult
@@ -261,7 +254,7 @@ checkNamed region color name mseed prop = do
 check :: Property -> IO Bool
 check prop = do
   color <- detectColor
-  displayRegion $ \region ->
+  displayRegion \region ->
     (== OK) . reportStatus <$> checkNamed region color Nothing Nothing prop
 
 -- | Check a property using a specific size and seed.
@@ -342,4 +335,4 @@ checkGroup (Group group props) = do
 updateSummary :: Region -> TVar Summary -> UseColor -> (Summary -> Summary) -> IO ()
 updateSummary sregion svar color f = do
   summary <- atomically (TVar.modifyTVar' svar f >> TVar.readTVar svar)
-  setRegion sregion =<< renderSummary color summary
+  atomically . setRegion sregion =<< renderSummary color summary
