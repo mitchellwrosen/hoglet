@@ -5,6 +5,7 @@ module Hedgehog.Internal.Gen
   ( -- * Transformer
     Gen,
     runGen,
+    commit,
 
     -- ** Shrinking
     shrink,
@@ -115,7 +116,9 @@ import Data.Bifunctor (first)
 import Data.ByteString (ByteString)
 import Data.ByteString qualified as ByteString
 import Data.Char qualified as Char
+import Data.Either qualified as Either
 import Data.Foldable (for_, toList)
+import Data.Functor ((<&>))
 import Data.Int (Int16, Int32, Int64, Int8)
 import Data.List.NonEmpty (NonEmpty)
 import Data.List.NonEmpty qualified as NonEmpty
@@ -159,12 +162,6 @@ mapGen f gen =
 
 -- | Lift a predefined shrink tree in to a generator, ignoring the seed and the
 --   size.
-fromTreeMaybeT :: Maybe (Tree a) -> Gen a
-fromTreeMaybeT x =
-  Gen \_ _ -> x
-
--- | Lift a predefined shrink tree in to a generator, ignoring the seed and the
---   size.
 toTreeMaybeT :: Gen a -> Gen (Maybe (Tree a))
 toTreeMaybeT =
   mapGen (fmap (fmap (Just . Tree.singleton)))
@@ -186,28 +183,12 @@ instance Applicative Gen where
             <$> runGen size sf f
             <*> runGen size sm m
 
---
--- implementation: satisfies law (ap = <*>)
---
--- instance Monad m => Applicative (GenT m) where
---  pure =
---    fromTreeMaybeT . pure
---  (<*>) f m =
---    GenT $ \ size seed ->
---      case Seed.split seed of
---        (sf, sm) ->
---          runGenT size sf f <*>
---          runGenT size sm m
-
-instance Monad Gen where
-  return =
-    pure
-
-  (>>=) m k =
-    Gen \size seed -> do
-      let (sk, sm) = Seed.split seed
-      ta <- runGen size sm m
-      fmap join (Tree.mapMaybe (runGen size sk . k) ta)
+commit :: Gen a -> (a -> Gen b) -> Gen b
+commit m k =
+  Gen \size seed -> do
+    let (sk, sm) = Seed.split seed
+    ta <- runGen size sm m
+    join <$> Tree.mapMaybe (runGen size sk . k) ta
 
 ------------------------------------------------------------------------
 -- Combinators
@@ -625,9 +606,10 @@ element_ = \case
 choice :: [Gen a] -> Gen a
 choice = \case
   [] -> error "Hedgehog.Gen.choice: used with empty list"
-  xs -> do
-    n <- integral (Range.constant 0 (length xs - 1))
-    xs !! n
+  xs ->
+    commit
+      (integral (Range.constant 0 (length xs - 1)))
+      (\n -> xs !! n)
 
 -- | Uses a weighted distribution to randomly select one of the generators in
 --   the list.
@@ -638,19 +620,19 @@ choice = \case
 frequency :: [(Int, Gen a)] -> Gen a
 frequency = \case
   [] -> error "Hedgehog.Gen.frequency: used with empty list"
-  xs0 -> do
-    let pick n = \case
-          [] -> error "Hedgehog.Gen.frequency/pick: used with empty list"
-          (k, x) : xs
-            | n <= k -> x
-            | otherwise -> pick (n - k) xs
-
-    n <-
-      shrink
-        (\n -> takeWhile (< n) (scanl1 (+) (fmap fst xs0)))
-        (integral_ (Range.constant 1 (sum (fmap fst xs0))))
-
-    pick n xs0
+  xs -> do
+    commit
+      ( shrink
+          (\n -> takeWhile (< n) (scanl1 (+) (fmap fst xs)))
+          (integral_ (Range.constant 1 (sum (fmap fst xs))))
+      )
+      (\n -> pick n xs)
+  where
+    pick n = \case
+      [] -> error "Hedgehog.Gen.frequency/pick: used with empty list"
+      (k, x) : xs
+        | n <= k -> x
+        | otherwise -> pick (n - k) xs
 
 -- | Modifies combinators which choose from a list of generators, like 'choice'
 --   or 'frequency', so that they can be used in recursive scenarios.
@@ -703,14 +685,15 @@ discard :: Gen a
 discard =
   Gen \_ _ -> Nothing
 
+select :: Gen (Either a b) -> Gen (a -> b) -> Gen b
+select gx gf =
+  (\x f -> Either.either f id x) <$> gx <*> gf
+
 -- | Discards the generator if the generated value does not satisfy the
 --   predicate.
 ensure :: (a -> Bool) -> Gen a -> Gen a
-ensure p gen = do
-  x <- gen
-  if p x
-    then pure x
-    else discard
+ensure p g =
+  select ((\x -> if p x then Right x else Left ()) <$> g) (const <$> discard)
 
 fromPred :: (a -> Bool) -> a -> Maybe a
 fromPred p a =
@@ -748,11 +731,14 @@ mapMaybe p gen0 =
   let try k =
         if k > 100
           then discard
-          else do
-            (x, gen) <- freeze $ scale (2 * k +) gen0
-            case p x of
-              Just _ -> mapGen (Tree.mapMaybe p =<<) gen
-              Nothing -> try (k + 1)
+          else
+            commit
+              (freeze $ scale (2 * k +) gen0)
+              ( \(x, gen) ->
+                  case p x of
+                    Just _ -> mapGen (Tree.mapMaybe p =<<) gen
+                    Nothing -> try (k + 1)
+              )
    in try 0
 
 -- | Runs a 'Maybe' generator until it produces a 'Just'.
@@ -802,9 +788,8 @@ list range gen =
       interleave = Tree.interleave . Maybe.catMaybes . Tree.treeValue
    in sized \size ->
         ensure (atLeast $ Range.lowerBound size range) $
-          mapGen (fmap interleave) $ do
-            n <- integral_ range
-            replicateM n (toTreeMaybeT gen)
+          mapGen (fmap interleave) do
+            commit (integral_ range) \n -> replicateM n (toTreeMaybeT gen)
 
 -- | Generates a seq using a 'Range' to determine the length.
 seq :: Range Int -> Gen a -> Gen (Seq a)
@@ -813,11 +798,10 @@ seq range gen =
 
 -- | Generates a non-empty list using a 'Range' to determine the length.
 nonEmpty :: Range Int -> Gen a -> Gen (NonEmpty a)
-nonEmpty range gen = do
-  xs <- list (fmap (max 1) range) gen
-  case xs of
+nonEmpty range gen =
+  list (fmap (max 1) range) gen <&> \case
     [] -> error "Hedgehog.Gen.nonEmpty: internal error, generated empty list"
-    _ -> pure $ NonEmpty.fromList xs
+    xs -> NonEmpty.fromList xs
 
 -- | Generates a set using a 'Range' to determine the length.
 --
@@ -836,13 +820,19 @@ set range gen =
 map :: (Ord k) => Range Int -> Gen (k, v) -> Gen (Map k v)
 map range gen =
   sized \size ->
-    ensure ((>= Range.lowerBound size range) . Map.size)
-      . fmap Map.fromList
-      . (sequence =<<)
-      . shrink Shrink.list
-      $ do
-        k <- integral_ range
-        uniqueByKey k gen
+    let
+        -- Generate `n` unique (by key) pair generators. Each generator will have a proper shrink tree, but the list
+        -- itself will not, because we had to commit to a specific size.
+        pairGens0 = commit (integral_ range) \n -> uniqueByKey n gen
+
+        -- Equip the pair generators with a proper list shrink, so that we also try shrinking the list itself.
+        pairGens1 = shrink Shrink.list pairGens0
+
+        -- Commit to one of those lists in particular, and sequence the list of generators applicatively.
+        pairsGen = commit pairGens1 sequenceA
+
+        honk3 = fmap Map.fromList pairsGen
+     in ensure ((>= Range.lowerBound size range) . Map.size) honk3
 
 -- | Generate exactly 'n' unique generators.
 uniqueByKey :: (Ord k) => Int -> Gen (k, v) -> Gen [Gen (k, v)]
@@ -850,11 +840,10 @@ uniqueByKey n gen =
   let try k xs0 =
         if k > 100
           then discard
-          else
-            replicateM n (freeze gen) >>= \kvs ->
-              case uniqueInsert n xs0 (fmap (first fst) kvs) of
-                Left xs -> pure $ Map.elems xs
-                Right xs -> try (k + 1) xs
+          else commit (replicateM n (freeze gen)) \kvs ->
+            case uniqueInsert n xs0 (fmap (first fst) kvs) of
+              Left xs -> pure $ Map.elems xs
+              Right xs -> try (k + 1) xs
    in try (0 :: Int) Map.empty
 
 uniqueInsert :: (Ord k) => Int -> Map k v -> [(k, v)] -> Either (Map k v) (Map k v)
@@ -903,8 +892,8 @@ deriving instance Traversable (Vec n)
 freeze :: Gen a -> Gen (a, Gen a)
 freeze gen =
   Gen \size seed -> do
-    Tree.Tree x xs <- runGen size seed gen
-    Just (Tree.singleton (x, fromTreeMaybeT . Just $ Tree x xs))
+    tree <- runGen size seed gen
+    Just (Tree.singleton (Tree.treeValue tree, Gen \_ _ -> Just tree))
 
 shrinkSubterms :: Subterms n a -> [Subterms n a]
 shrinkSubterms = \case
@@ -913,10 +902,10 @@ shrinkSubterms = \case
 
 genSubterms :: Vec n (Gen a) -> Gen (Subterms n a)
 genSubterms =
-  (sequence =<<)
+  (flip commit sequenceA)
     . shrink shrinkSubterms
     . fmap All
-    . mapM (fmap snd . freeze)
+    . traverse (fmap snd . freeze)
 
 fromSubterms :: (Applicative m) => (Vec n a -> m a) -> Subterms n a -> m a
 fromSubterms f = \case
@@ -928,7 +917,7 @@ fromSubterms f = \case
 --   /Shrinks to one of the sub-terms if possible./
 subtermMVec :: Vec n (Gen a) -> (Vec n a -> Gen a) -> Gen a
 subtermMVec gs f =
-  fromSubterms f =<< genSubterms gs
+  commit (genSubterms gs) (fromSubterms f)
 
 -- | Constructs a generator from a sub-term generator.
 --
@@ -1025,8 +1014,7 @@ shuffleSeq :: Seq a -> Gen (Seq a)
 shuffleSeq xs =
   if null xs
     then pure Seq.empty
-    else do
-      n <- integral $ Range.constant 0 (length xs - 1)
+    else commit (integral $ Range.constant 0 (length xs - 1)) \n ->
       -- Data.Sequence should offer a version of deleteAt that returns the
       -- deleted element, but it does not currently do so. Lookup followed
       -- by deletion seems likely faster than splitting and then appending,

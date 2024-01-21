@@ -68,6 +68,7 @@ where
 
 import Control.DeepSeq (NFData, rnf)
 import Control.Exception (SomeException (..), displayException)
+import Control.Monad qualified as Monad
 import Data.Char qualified as Char
 import Data.Functor (($>), (<&>))
 import Data.List qualified as List
@@ -103,24 +104,17 @@ newtype Test a = Test
 
 instance Applicative Test where
   pure x = Test (pure (Right x, mempty))
-  Test ef <*> Test ex =
-    Test do
-      ef >>= \case
-        (Left e, jf) -> pure (Left e, jf)
-        (Right f, jf) ->
-          ex <&> \case
-            (Left e, jx) -> let !j = jf <> jx in (Left e, j)
-            (Right x, jx) -> let !j = jf <> jx in (Right (f x), j)
+  (<*>) = Monad.ap
 
 instance Monad Test where
   Test ex >>= f =
     Test do
-      ex >>= \case
+      Gen.commit ex \case
         (Left e, jx) -> pure (Left e, jx)
-        (Right x, jx) -> do
-          (y, jy) <- runTest (f x)
-          let !j = jx <> jy
-          pure (y, j)
+        (Right x, jx) ->
+          runTest (f x) <&> \(y, jy) ->
+            let !j = jx <> jy
+             in (y, j)
 
 -- | Configuration for a property test.
 data PropertyConfig = PropertyConfig
